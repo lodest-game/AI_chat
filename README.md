@@ -201,7 +201,7 @@ async def get_weather(city: str) -> dict:
 1. 工具定义格式
 工具定义遵循OpenAI工具调用规范：
 
-json
+```json
 {
   "type": "function",
   "function": {
@@ -216,6 +216,8 @@ json
     }
   }
 }
+```
+
 2. 工具函数要求
 工具函数需要：
 
@@ -278,7 +280,7 @@ async def example_tool(param1: str, chat_id: str = None) -> dict:
 3-1. 消息接收格式
 客户端收到消息后，应转换为以下格式传递给系统：
 
-json
+```json
 {
   "chat_id": "平台_类型_ID",          // 如: qq_private_123456
   "content": "消息内容或消息数组",    // 文本或OpenAI格式的多模态消息
@@ -288,11 +290,12 @@ json
   "is_respond": true|false,          // 是否需要AI响应
   "timestamp": 1234567890.123       // Unix时间戳
 }
+```
 
 3-2. 消息内容格式
 多模态消息（OpenAI格式）：
 
-json
+```json
 [
   {
     "type": "text",
@@ -305,6 +308,7 @@ json
     }
   }
 ]
+```
 
 3-3. 客户端接口要求
 客户端类必须实现以下方法：
@@ -333,12 +337,13 @@ class Client:
 3-4. 响应数据格式
 系统发送给客户端的响应格式：
 
-json
+```json
 {
   "chat_id": "qq_private_123456",
   "content": "AI回复内容",
   "timestamp": 1234567890.123
 }
+```
 
 ### 添加新模型服务
 1. 在`models/`目录创建`xxx_model.py`
@@ -357,7 +362,7 @@ json
 3-1. 请求数据格式
 系统发送给模型服务的请求格式：
 
-json
+```json
 {
   "chat_id": "对话ID",
   "session_data": {
@@ -372,10 +377,12 @@ json
   },
   "timestamp": 1234567890.123
 }
+```
+
 3-2. 响应数据格式
 模型服务返回的响应格式（OpenAI API兼容）：
 
-json
+```json
 {
   "choices": [
     {
@@ -391,6 +398,8 @@ json
     "completion_tokens": 50
   }
 }
+```
+
 3-3. 服务端接口要求
 模型服务类必须实现以下方法：
 
@@ -469,3 +478,4 @@ class Model:
 **提示**: 首次运行时会自动创建必要的目录和配置文件。请确保有足够的磁盘空间和网络连接（用于图片下载）。
 
 **注意**: 生产环境部署前请仔细审查安全配置，特别是权限和网络设置。
+
