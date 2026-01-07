@@ -38,7 +38,7 @@
 
 ### 1. 克隆仓库
 ```bash
-git clone https://github.com/yourusername/async-ai-agent.git
+git clone https://github.com/lodest-game/AI_chat.git
 cd async-ai-agent
 ```
 
