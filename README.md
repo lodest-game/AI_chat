@@ -231,7 +231,7 @@ async def get_weather(city: str) -> dict:
 
 示例工具函数：
 
-python
+```python
 async def example_tool(param1: str, chat_id: str = None) -> dict:
     """
     示例工具函数
@@ -248,6 +248,7 @@ async def example_tool(param1: str, chat_id: str = None) -> dict:
         "result": f"处理结果: {param1}",
         "chat_id": chat_id
     }
+```
 
 ## 🎯 性能特点
 
@@ -313,7 +314,7 @@ async def example_tool(param1: str, chat_id: str = None) -> dict:
 3-3. 客户端接口要求
 客户端类必须实现以下方法：
 
-python
+```python
 class Client:
     async def start(self, config: dict, message_callback: callable):
         """启动客户端
@@ -333,6 +334,7 @@ class Client:
         
     async def stop(self):
         """停止客户端"""
+```
 
 3-4. 响应数据格式
 系统发送给客户端的响应格式：
@@ -403,7 +405,7 @@ class Client:
 3-3. 服务端接口要求
 模型服务类必须实现以下方法：
 
-python
+```python
 class Model:
     async def start(self, config: dict):
         """启动模型服务
@@ -424,6 +426,7 @@ class Model:
         
     async def stop(self):
         """停止模型服务"""
+```
 
 ### 扩展工具函数
 1. 在`tools_service/`目录添加`.py`文件
@@ -478,4 +481,5 @@ class Model:
 **提示**: 首次运行时会自动创建必要的目录和配置文件。请确保有足够的磁盘空间和网络连接（用于图片下载）。
 
 **注意**: 生产环境部署前请仔细审查安全配置，特别是权限和网络设置。
+
 
