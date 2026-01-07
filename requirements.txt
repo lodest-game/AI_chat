@@ -1,0 +1,22 @@
+# requirements.txt
+# 异步AI代理系统 - 核心依赖
+# Python 3.8+ Required
+
+# >=>=>=>=>= 核心运行时依赖 >=>=>=>=>=
+# 异步HTTP客户端
+aiohttp>=3.9.3
+
+# 高级类型支持
+typing-extensions>=4.9.0
+
+# 配置验证和数据模型
+pydantic>=2.5.3
+
+# 异步工具库
+aiomisc>=17.0.0
+
+# 异步文件操作
+aiofiles>=23.2.1
+
+# 网络通信
+websockets>=12.0
