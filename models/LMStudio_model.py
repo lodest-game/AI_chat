@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 LMStudio_model.py - 完全异步的LM Studio模型服务
-移除线程池，使用asyncio信号量控制并发
+简化版本，移除所有无效参数
 """
 
 import asyncio
@@ -11,7 +11,7 @@ import json
 import logging
 import time
 from pathlib import Path
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional
 
 
 class Model:
@@ -39,7 +39,6 @@ class Model:
         # 连接参数
         self.base_url = "http://localhost:1234"
         self.api_key = ""
-        self.timeout_seconds = 300
         
         # 请求统计
         self.request_counter = 0
@@ -59,7 +58,6 @@ class Model:
         connection_config = config.get("connection", {})
         self.base_url = connection_config.get("base_url", "http://localhost:1234")
         self.api_key = connection_config.get("api_key", "")
-        self.timeout_seconds = connection_config.get("timeout_seconds", 300)
         
         # 生成配置文件路径
         self.config_file = self._get_config_file_path()
@@ -112,27 +110,10 @@ class Model:
         default_config = {
             "connection": {
                 "base_url": "http://localhost:1234",
-                "api_key": "",
-                "timeout_seconds": 300,
-                "retry_attempts": 3,
-                "retry_delay": 1.0
+                "api_key": ""
             },
             "performance": {
-                "max_concurrent_requests": 10,
-                "request_timeout": 300,
-                "queue_timeout": 30
-            },
-            "model": {
-                "default_model": "local_model",
-                "max_tokens": 64000,
-                "temperature": 0.7,
-                "top_p": 1.0,
-                "frequency_penalty": 0.0,
-                "presence_penalty": 0.0
-            },
-            "logging": {
-                "level": "INFO",
-                "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+                "max_concurrent_requests": 10
             }
         }
         
@@ -156,7 +137,6 @@ class Model:
         connection_config = self.config.get("connection", {})
         self.base_url = connection_config.get("base_url", self.base_url)
         self.api_key = connection_config.get("api_key", self.api_key)
-        self.timeout_seconds = connection_config.get("timeout_seconds", self.timeout_seconds)
         
         performance_config = self.config.get("performance", {})
         self.max_concurrent_requests = performance_config.get("max_concurrent_requests", self.max_concurrent_requests)
@@ -210,18 +190,15 @@ class Model:
                 self.request_counter += 1
                 current_request = self.request_counter
                 
-                # 提取会话数据
+                # 直接使用session_data作为请求体
                 session_data = request_data.get("session_data", {})
-                
-                # 构建OpenAI API格式的请求
-                openai_request = self._build_openai_request(session_data)
                 
                 # 记录请求开始
                 self.logger.debug(f"开始处理模型请求 #{current_request}")
                 start_time = time.time()
                 
                 # 发送异步请求
-                response = await self._call_openai_api_async(openai_request)
+                response = await self._call_openai_api_async(session_data)
                 
                 # 记录请求结束
                 request_time = time.time() - start_time
@@ -241,34 +218,8 @@ class Model:
                 self.logger.error(f"发送模型请求失败: {e}")
                 return None
                 
-    def _build_openai_request(self, session_data: Dict[str, Any]) -> Dict[str, Any]:
-        """构建OpenAI API请求"""
-        # 从会话数据中提取必要信息
-        model = session_data.get("model", "local_model")
-        messages = session_data.get("messages", [])
-        tools = session_data.get("tools", [])
-        max_tokens = session_data.get("max_tokens", 64000)
-        temperature = session_data.get("temperature", 0.7)
-        stream = session_data.get("stream", False)
-        
-        # 构建请求
-        request = {
-            "model": model,
-            "messages": messages,
-            "max_tokens": max_tokens,
-            "temperature": temperature,
-            "stream": stream
-        }
-        
-        # 如果有工具定义，添加工具参数
-        if tools:
-            request["tools"] = tools
-            request["tool_choice"] = "auto"
-            
-        return request
-        
-    async def _call_openai_api_async(self, request_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """异步调用OpenAI API"""
+    async def _call_openai_api_async(self, session_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """异步调用OpenAI API，直接使用session_data作为请求体"""
         try:
             endpoint = f"{self.base_url}/v1/chat/completions"
             headers = self._get_headers()
@@ -276,11 +227,8 @@ class Model:
             # 记录请求开始时间
             start_time = time.time()
             
-            # 使用独立的超时设置
-            timeout = aiohttp.ClientTimeout(total=self.timeout_seconds)
-            
             # 记录请求数据（脱敏）
-            log_data = request_data.copy()
+            log_data = session_data.copy()
             if "messages" in log_data:
                 for i, msg in enumerate(log_data.get("messages", [])):
                     if "content" in msg and isinstance(msg["content"], str) and len(msg["content"]) > 50:
@@ -288,12 +236,12 @@ class Model:
             
             self.logger.debug(f"模型请求数据: {json.dumps(log_data, ensure_ascii=False)[:200]}...")
             
-            # 为每个请求创建独立的会话
-            async with aiohttp.ClientSession(timeout=timeout) as session:
+            # 为每个请求创建独立的会话，不设置超时
+            async with aiohttp.ClientSession() as session:
                 # 发送异步HTTP请求
                 async with session.post(
                     endpoint, 
-                    json=request_data, 
+                    json=session_data,  # 直接使用session_data
                     headers=headers
                 ) as response:
                     
@@ -317,7 +265,7 @@ class Model:
                         return None
                         
         except asyncio.TimeoutError:
-            self.logger.error(f"模型请求超时: {self.timeout_seconds}秒")
+            self.logger.error(f"模型请求超时")
             return None
         except aiohttp.ClientError as e:
             self.logger.error(f"HTTP客户端错误: {type(e).__name__}: {e}")
@@ -336,8 +284,10 @@ class Model:
             endpoint = f"{self.base_url}/v1/models"
             headers = self._get_headers()
             
-            async with aiohttp.ClientSession() as session:
-                async with session.get(endpoint, headers=headers, timeout=5) as response:
+            # 使用短超时进行连接检查
+            timeout = aiohttp.ClientTimeout(total=5)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.get(endpoint, headers=headers) as response:
                     return response.status == 200
                     
         except Exception:

@@ -17,6 +17,7 @@ from typing import Dict, Any, List, Optional, Callable
 from pathlib import Path
 import random
 import os
+import html
 
 
 class Client:
@@ -266,14 +267,17 @@ class Client:
             user_id = event_data.get("user_id")
             message = event_data.get("message", [])
             raw_message = event_data.get("raw_message", "")
-            self_id = event_data.get("self_id")
             message_format = event_data.get("message_format", "array")
+            
+            # 获取发送者信息
+            sender = event_data.get("sender", {})
+            user_nickname = sender.get("nickname", f"发言人{user_id}")
             
             # 构建chat_id
             chat_id = f"qq_private_{user_id}"
             
             # 提取并转换消息
-            extracted_messages = self._extract_messages(message, raw_message, message_format)
+            extracted_messages = self._extract_messages(message, raw_message, message_format, user_nickname)
             
             # 私聊始终需要响应
             is_respond = True
@@ -282,9 +286,6 @@ class Client:
             message_data = {
                 "chat_id": chat_id,
                 "content": extracted_messages,
-                "user_id": user_id,
-                "self_id": self_id,
-                "message_type": "private",
                 "is_respond": is_respond,
                 "timestamp": time.time()
             }
@@ -313,30 +314,31 @@ class Client:
             group_id = event_data.get("group_id")
             message = event_data.get("message", [])
             raw_message = event_data.get("raw_message", "")
-            self_id = event_data.get("self_id")
             message_format = event_data.get("message_format", "array")
+            
+            # 获取发送者信息
+            sender = event_data.get("sender", {})
+            user_nickname = sender.get("nickname", f"发言人{user_id}")
+            user_card = sender.get("card", "")  # 群名片
+            display_name = user_card if user_card and user_card.strip() else user_nickname
             
             # 构建chat_id
             chat_id = f"qq_group_{group_id}"
             
             # 提取并转换消息
             extracted_messages, contains_at_bot = self._extract_group_messages(
-                message, raw_message, message_format
+                message, raw_message, message_format, display_name
             )
             
             # 判断是否需要响应
             is_respond = self._should_respond_group(
-                extracted_messages, contains_at_bot, user_id, group_id, self_id
+                extracted_messages, contains_at_bot, user_id, group_id
             )
             
             # 构建发送给系统的消息数据
             message_data = {
                 "chat_id": chat_id,
                 "content": extracted_messages,
-                "user_id": user_id,
-                "group_id": group_id,
-                "self_id": self_id,
-                "message_type": "group",
                 "is_respond": is_respond,
                 "timestamp": time.time()
             }
@@ -357,8 +359,8 @@ class Client:
         except Exception as e:
             self.logger.error(f"处理群聊消息失败: {e}")
             
-    def _extract_messages(self, message: Any, raw_message: str, message_format: str) -> List[Dict[str, Any]]:
-        """提取消息内容"""
+    def _extract_messages(self, message: Any, raw_message: str, message_format: str, display_name: str = None) -> List[Dict[str, Any]]:
+        """提取消息内容，添加发言人身份标识"""
         extracted_content = []
         
         # 处理字符串格式的消息
@@ -366,40 +368,57 @@ class Client:
             # 消息是字符串，尝试提取CQ码
             text_content = raw_message
             
-            # 提取图片URL
-            image_urls = self._extract_image_urls_from_text(text_content)
+            # 移除CQ码中的@信息，保留纯文本
+            clean_text = self._remove_cq_codes(text_content)
             
             # 如果有图片，分离文本和图片
+            image_urls = self._extract_image_urls_from_text(text_content)
+            
+            # 如果有图片，先处理文本部分
             if image_urls:
-                # 移除CQ码，保留纯文本
-                clean_text = self._remove_cq_codes(text_content)
                 if clean_text.strip():
+                    # 添加发言人身份标识
+                    if display_name:
+                        formatted_text = f"发言人：{display_name}。发言内容：{clean_text}"
+                    else:
+                        formatted_text = clean_text
+                    
                     extracted_content.append({
                         "type": "text",
-                        "text": clean_text
+                        "text": formatted_text
                     })
                 
                 # 添加图片
                 for url in image_urls:
-                    # 不进行格式验证，直接使用URL（让AI模型处理）
+                    decoded_url = html.unescape(url)
                     extracted_content.append({
                         "type": "image_url",
-                        "image_url": {"url": url}
+                        "image_url": {"url": decoded_url}
                     })
             else:
                 # 纯文本消息
-                if text_content.strip():
+                if clean_text.strip():
+                    # 添加发言人身份标识
+                    if display_name:
+                        formatted_text = f"发言人：{display_name}。发言内容：{clean_text}"
+                    else:
+                        formatted_text = clean_text
+                    
                     extracted_content.append({
                         "type": "text",
-                        "text": text_content
+                        "text": formatted_text
                     })
                     
             return extracted_content
             
         # 处理数组格式的消息
         if not isinstance(message, list):
-            return self._extract_messages(raw_message, raw_message, "string")
+            return self._extract_messages(raw_message, raw_message, "string", display_name)
             
+        # 收集所有文本内容
+        text_parts = []
+        image_urls = []
+        
         # 处理每个消息段
         for segment in message:
             if not isinstance(segment, dict):
@@ -412,64 +431,72 @@ class Client:
                 # 文本消息
                 text = segment_data.get("text", "")
                 if text.strip():
-                    extracted_content.append({
-                        "type": "text",
-                        "text": text
-                    })
+                    text_parts.append(text)
                     
             elif segment_type == "image":
-                # 图片消息 - 直接使用url参数
+                # 图片消息
                 file_url = segment_data.get("url", "")
                 if file_url:
-                    # HTML实体解码
-                    import html
                     decoded_url = html.unescape(file_url)
-                    extracted_content.append({
-                        "type": "image_url",
-                        "image_url": {"url": decoded_url}
-                    })
+                    image_urls.append(decoded_url)
                     
             elif segment_type == "at":
-                # @消息
-                qq = segment_data.get("qq", "")
-                if str(qq) in self.bot_qq_numbers:
-                    extracted_content.append({
-                        "type": "text",
-                        "text": f"@机器人 "
-                    })
-                else:
-                    extracted_content.append({
-                        "type": "text",
-                        "text": f"@用户{qq} "
-                    })
-                    
+                # @消息 - 不添加到文本中，只用于判断是否需要响应
+                pass
+                
             elif segment_type == "face":
-                # QQ表情
+                # QQ表情 - 转换为文本表示
                 face_id = segment_data.get("id", "")
-                extracted_content.append({
-                    "type": "text",
-                    "text": f"[表情:{face_id}] "
-                })
+                text_parts.append(f"[表情:{face_id}]")
                 
             elif segment_type == "reply":
-                # 回复消息
+                # 回复消息 - 转换为文本表示
                 reply_id = segment_data.get("id", "")
-                extracted_content.append({
-                    "type": "text",
-                    "text": f"[回复:{reply_id}] "
-                })
+                text_parts.append(f"[回复:{reply_id}]")
                 
             else:
                 # 其他类型消息
-                extracted_content.append({
-                    "type": "text",
-                    "text": f"[{segment_type}] "
-                })
-                
+                text_parts.append(f"[{segment_type}]")
+        
+        # 合并文本内容
+        combined_text = " ".join(text_parts).strip()
+        
+        # 如果有文本内容
+        if combined_text:
+            # 添加发言人身份标识
+            if display_name:
+                formatted_text = f"发言人：{display_name}。发言内容：{combined_text}"
+            else:
+                formatted_text = combined_text
+            
+            extracted_content.append({
+                "type": "text",
+                "text": formatted_text
+            })
+        
+        # 添加图片
+        for url in image_urls:
+            extracted_content.append({
+                "type": "image_url",
+                "image_url": {"url": url}
+            })
+        
+        # 如果既没有文本也没有图片，添加一个默认消息
+        if not extracted_content:
+            if display_name:
+                formatted_text = f"发言人：{display_name}。发言内容：[消息]"
+            else:
+                formatted_text = "[消息]"
+            
+            extracted_content.append({
+                "type": "text",
+                "text": formatted_text
+            })
+        
         return extracted_content
         
-    def _extract_group_messages(self, message: Any, raw_message: str, message_format: str) -> tuple:
-        """提取群聊消息内容"""
+    def _extract_group_messages(self, message: Any, raw_message: str, message_format: str, display_name: str) -> tuple:
+        """提取群聊消息内容，添加发言人身份标识"""
         extracted_content = []
         contains_at_bot = False
         
@@ -479,15 +506,27 @@ class Client:
             if self._contains_at_bot_in_text(raw_message):
                 contains_at_bot = True
                 
+            # 移除@机器人的CQ码
+            for qq in self.bot_qq_numbers:
+                if qq:
+                    raw_message = raw_message.replace(f"[CQ:at,qq={qq}]", "")
+            
+            # 移除其他@的CQ码
+            raw_message = re.sub(r'\[CQ:at,qq=\d+\]', '', raw_message)
+            
             # 提取消息内容
-            content = self._extract_messages(message, raw_message, message_format)
+            content = self._extract_messages(raw_message, raw_message, "string", display_name)
             return content, contains_at_bot
             
         # 处理数组格式的消息
         if not isinstance(message, list):
-            content = self._extract_messages(message, raw_message, message_format)
+            content = self._extract_messages(message, raw_message, message_format, display_name)
             return content, False
             
+        # 收集所有文本内容
+        text_parts = []
+        image_urls = []
+        
         # 处理每个消息段
         for segment in message:
             if not isinstance(segment, dict):
@@ -500,54 +539,64 @@ class Client:
                 # 文本消息
                 text = segment_data.get("text", "")
                 if text.strip():
-                    extracted_content.append({
-                        "type": "text",
-                        "text": text
-                    })
+                    text_parts.append(text)
                     
             elif segment_type == "image":
                 # 图片消息
                 file_url = segment_data.get("url", "")
                 if file_url and self._is_valid_media_file(file_url):
-                    extracted_content.append({
-                        "type": "image_url",
-                        "image_url": {"url": file_url}
-                    })
+                    decoded_url = html.unescape(file_url)
+                    image_urls.append(decoded_url)
                     
             elif segment_type == "at":
                 # @消息
                 qq = segment_data.get("qq", "")
                 if str(qq) in self.bot_qq_numbers:
                     contains_at_bot = True
-                else:
-                    extracted_content.append({
-                        "type": "text",
-                        "text": f"@用户{qq} "
-                    })
-                    
+                # 不将@信息添加到文本内容中
+                
             elif segment_type == "face":
                 # QQ表情
                 face_id = segment_data.get("id", "")
-                extracted_content.append({
-                    "type": "text",
-                    "text": f"[表情:{face_id}] "
-                })
+                text_parts.append(f"[表情:{face_id}]")
                 
             elif segment_type == "reply":
                 # 回复消息
                 reply_id = segment_data.get("id", "")
-                extracted_content.append({
-                    "type": "text",
-                    "text": f"[回复:{reply_id}] "
-                })
+                text_parts.append(f"[回复:{reply_id}]")
                 
             else:
                 # 其他类型消息
-                extracted_content.append({
-                    "type": "text",
-                    "text": f"[{segment_type}] "
-                })
-                
+                text_parts.append(f"[{segment_type}]")
+        
+        # 合并文本内容
+        combined_text = " ".join(text_parts).strip()
+        
+        # 如果有文本内容
+        if combined_text:
+            formatted_text = f"发言人：{display_name}。发言内容：{combined_text}"
+            
+            extracted_content.append({
+                "type": "text",
+                "text": formatted_text
+            })
+        
+        # 添加图片
+        for url in image_urls:
+            extracted_content.append({
+                "type": "image_url",
+                "image_url": {"url": url}
+            })
+        
+        # 如果既没有文本也没有图片，添加一个默认消息
+        if not extracted_content:
+            formatted_text = f"发言人：{display_name}。发言内容：[消息]"
+            
+            extracted_content.append({
+                "type": "text",
+                "text": formatted_text
+            })
+        
         return extracted_content, contains_at_bot
         
     def _extract_image_urls_from_text(self, text: str) -> List[str]:
@@ -562,7 +611,6 @@ class Client:
         for url in matches:
             try:
                 # HTML实体解码
-                import html
                 decoded_url = html.unescape(url)
                 decoded_matches.append(decoded_url)
             except Exception:
@@ -602,7 +650,7 @@ class Client:
             
     def _should_respond_group(self, extracted_messages: List[Dict[str, Any]], 
                             contains_at_bot: bool,
-                            user_id: int, group_id: int, self_id: int) -> bool:
+                            user_id: int, group_id: int) -> bool:
         """判断群聊消息是否需要响应"""
         response_config = self.config.get("response", {})
         respond_to_all = response_config.get("respond_to_all", False)
