@@ -224,8 +224,6 @@ class TaskManager:
                     message = choice["message"]
                     if "content" in message and message["content"]:
                         return message["content"]
-                    elif "tool_calls" in message:
-                        return "[抱歉，群聊太过抽象，响应失败啦]"
                         
             if "content" in model_response:
                 return model_response["content"]
@@ -398,4 +396,5 @@ class TaskManager:
             "chat_id": task_info.get("task_data", {}).get("chat_id"),
             "success": False,
             "error": error_msg
+
         }
