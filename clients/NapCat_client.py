@@ -379,7 +379,7 @@ class Client:
                 if clean_text.strip():
                     # 添加发言人身份标识
                     if display_name:
-                        formatted_text = f"发言人：{display_name}。发言内容：{clean_text}"
+                        formatted_text = f"发言人：{display_name}。\n发言内容：{clean_text}"
                     else:
                         formatted_text = clean_text
                     
@@ -400,7 +400,7 @@ class Client:
                 if clean_text.strip():
                     # 添加发言人身份标识
                     if display_name:
-                        formatted_text = f"发言人：{display_name}。发言内容：{clean_text}"
+                        formatted_text = f"发言人：{display_name}。\n发言内容：{clean_text}"
                     else:
                         formatted_text = clean_text
                     
@@ -465,7 +465,7 @@ class Client:
         if combined_text:
             # 添加发言人身份标识
             if display_name:
-                formatted_text = f"发言人：{display_name}。发言内容：{combined_text}"
+                formatted_text = f"发言人：{display_name}。\n发言内容：{combined_text}"
             else:
                 formatted_text = combined_text
             
@@ -484,7 +484,7 @@ class Client:
         # 如果既没有文本也没有图片，添加一个默认消息
         if not extracted_content:
             if display_name:
-                formatted_text = f"发言人：{display_name}。发言内容：[消息]"
+                formatted_text = f"发言人：{display_name}。\n发言内容：[消息]"
             else:
                 formatted_text = "[消息]"
             
@@ -574,7 +574,7 @@ class Client:
         
         # 如果有文本内容
         if combined_text:
-            formatted_text = f"发言人：{display_name}。发言内容：{combined_text}"
+            formatted_text = f"发言人：{display_name}。\n发言内容：{combined_text}"
             
             extracted_content.append({
                 "type": "text",
@@ -590,7 +590,7 @@ class Client:
         
         # 如果既没有文本也没有图片，添加一个默认消息
         if not extracted_content:
-            formatted_text = f"发言人：{display_name}。发言内容：[消息]"
+            formatted_text = f"发言人：{display_name}。\n发言内容：[消息]"
             
             extracted_content.append({
                 "type": "text",
