@@ -45,7 +45,7 @@ prompt_service - 提示词管理工具（优化返回格式版）
 
 async def view_prompt(chat_id: str) -> dict:
     """
-    查看当前对话的专属提示词
+    查看专属提示词
     
     注意：实际查询逻辑由task_manager中的context_manager处理
     这里只是接口定义，返回格式优化的结果
@@ -321,4 +321,5 @@ async def delete_prompt(chat_id: str) -> dict:
         }
         
     def list_tools(self) -> List[str]:
+
         return list(self.tools_registry.keys())
