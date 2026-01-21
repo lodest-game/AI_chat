@@ -25,7 +25,7 @@ class RulesManager:
             if hasattr(self, key):
                 setattr(self, key, value)
                 
-        self.parallel_mode = "wait"
+        self.parallel_mode = config.get("system", {}).get("rules_manager", {}).get("mode", "wait")
         self.is_running = True
         
     async def handle_workflow_b_result(self, workflow_result: Dict[str, Any]):
