@@ -36,10 +36,8 @@ class ContextManager:
                 "temperature": 0.1,
                 "stream": False
             },
-            "core_prompt": ["你是智能助手"],
+            "core_prompt": ["你是群聊成员"],
             "max_user_messages_per_chat": 20,
-            "virtual_reply_enabled": True,
-            "virtual_reply_text": "已跳过此信息",
             "cache_inactive_unload_seconds": 1800
         }
         
@@ -48,11 +46,9 @@ class ContextManager:
         self.history_dir.mkdir(exist_ok=True)
         
         self.max_user_messages_per_chat = self.config.get("max_user_messages_per_chat", 20)
-        self.virtual_reply_enabled = self.config.get("virtual_reply_enabled", True)
-        self.virtual_reply_text = self.config.get("virtual_reply_text", "已跳过此信息")
         self.cache_inactive_unload_seconds = self.config.get("cache_inactive_unload_seconds", 1800)
         
-        self.core_prompt = self.config.get("core_prompt", ["你是智能助手"])
+        self.core_prompt = self.config.get("core_prompt", ["你是群聊成员"])
         if isinstance(self.core_prompt, list):
             self.core_prompt = "\n".join(self.core_prompt)
             
@@ -265,10 +261,6 @@ class ContextManager:
                     
                 user_message = {"role": "user", "content": message_content}
                 context_data["data"]["messages"].append(user_message)
-                
-                if self.virtual_reply_enabled:
-                    virtual_reply = {"role": "assistant", "content": self.virtual_reply_text}
-                    context_data["data"]["messages"].append(virtual_reply)
             
             await self._trim_context_messages(context_data)
             

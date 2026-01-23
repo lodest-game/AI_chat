@@ -48,8 +48,6 @@ class ConfigManager:
                         "保持对话连贯，避免机械化地重复格式信息。"
                     ],
                     "max_user_messages_per_chat": 20,
-                    "virtual_reply_enabled": True,
-                    "virtual_reply_text": "已跳过此信息",
                     "cache_inactive_unload_seconds": 1800,
                 },
                 "rules_manager": {"mode": "wait"},
@@ -190,5 +188,4 @@ class ConfigManager:
                     await callback(module, None, config_data)
                     
     async def shutdown(self):
-
         self.logger.info("配置管理器已关闭")

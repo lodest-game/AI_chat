@@ -143,193 +143,46 @@ class SessionManager:
             messages = data_section.get("messages", [])
             filtered_messages = []
             
-            # 找到最后一个用户消息的索引和所有工具消息
-            last_user_msg_index = -1
-            tool_messages = []
-            for i, message in enumerate(messages):
-                role = message.get("role")
-                if role == "user":
-                    last_user_msg_index = i
-                elif role == "tool":
-                    tool_messages.append((i, message))
+            # 查找最后一条用户消息的索引
+            last_user_message_index = -1
+            for i in range(len(messages) - 1, -1, -1):
+                if messages[i].get("role") == "user":
+                    last_user_message_index = i
+                    break
             
-            has_tool_messages = len(tool_messages) > 0
-            
-            # 处理所有消息
             for i, message in enumerate(messages):
                 role = message.get("role")
                 content = message.get("content", "")
                 
-                # 检查是否是当前问题的虚拟回复
-                is_current_virtual_reply = False
-                if role == "assistant" and isinstance(content, str):
-                    virtual_reply_text = self.config.get("virtual_reply_text", "已跳过此信息")
-                    if content == virtual_reply_text:
-                        # 检查这个虚拟回复是否是紧跟在最后一个用户消息之后的
-                        if i == last_user_msg_index + 1:
-                            # 这是当前问题的虚拟回复，应该移除
-                            is_current_virtual_reply = True
-                        else:
-                            # 这是其他虚拟回复，应该保留
-                            filtered_messages.append({"role": role, "content": content})
-                            continue
+                if chat_mode == "LLM" and role == "user":
+                    if isinstance(content, list):
+                        text_content = []
+                        for item in content:
+                            if isinstance(item, dict):
+                                if item.get("type") == "text":
+                                    text_content.append(item.get("text", ""))
+                                elif item.get("type") == "image_url":
+                                    continue
+                        content = text_content if len(text_content) > 1 else (text_content[0] if text_content else "")
                 
-                # 如果已经处理了虚拟回复（保留或跳过），继续下一个消息
-                if role == "assistant" and isinstance(content, str) and is_current_virtual_reply:
-                    # 当前问题的虚拟回复被跳过，不添加到filtered_messages
-                    continue
-                
-                if role == "user":
-                    # 检查是否是最后一个用户消息（即当前问题）
-                    is_current_question = (i == last_user_msg_index)
-                    
-                    if chat_mode == "LLM":
-                        if isinstance(content, list):
-                            # 处理多模态消息
-                            processed_content = []
-                            has_text = False
-                            text_items = []
-                            
-                            for item in content:
-                                if isinstance(item, dict):
-                                    item_type = item.get("type")
-                                    if item_type == "text":
-                                        text = item.get("text", "")
-                                        if isinstance(text, str) and text.strip():
-                                            text_items.append(text)
-                                            has_text = True
-                                    elif item_type == "image_url":
-                                        # 图片部分保持原样
-                                        processed_content.append(item)
-                            
-                            # 处理文本部分
-                            if has_text and is_current_question and not has_tool_messages:
-                                # 当前问题且没有工具消息：为文本添加注意力集中前缀
-                                combined_text = " ".join(text_items) if len(text_items) > 1 else text_items[0] if text_items else ""
-                                formatted_text = f"【当前用户请求】请专注回答以下问题：\n{combined_text}"
-                                processed_content.insert(0, {"type": "text", "text": formatted_text})
-                                filtered_messages.append({"role": role, "content": processed_content})
-                            else:
-                                # 已经有工具消息或不是当前问题：保持原始格式
-                                if has_text:
-                                    if len(text_items) == 1:
-                                        processed_content.insert(0, {"type": "text", "text": text_items[0]})
-                                    else:
-                                        for text in text_items:
-                                            processed_content.append({"type": "text", "text": text})
-                                filtered_messages.append({"role": role, "content": processed_content})
-                        elif isinstance(content, str):
-                            # 纯文本消息
-                            if is_current_question and not has_tool_messages:
-                                # 当前问题且没有工具消息：添加注意力集中前缀
-                                formatted_content = f"【当前用户请求】请专注回答以下问题：\n{content}"
-                                filtered_messages.append({"role": role, "content": formatted_content})
-                            else:
-                                # 已经有工具消息或不是当前问题：保持原始格式
-                                filtered_messages.append({"role": role, "content": content})
-                    else:
-                        # MLLM模式：也为当前问题的文本添加注意力前缀（如果没有工具消息）
-                        if isinstance(content, list):
-                            processed_content = []
-                            has_text = False
-                            text_items = []
-                            
-                            for item in content:
-                                if isinstance(item, dict):
-                                    item_type = item.get("type")
-                                    if item_type == "text":
-                                        text = item.get("text", "")
-                                        if isinstance(text, str) and text.strip():
-                                            text_items.append(text)
-                                            has_text = True
-                                    elif item_type == "image_url":
-                                        processed_content.append(item)
-                            
-                            if has_text and is_current_question and not has_tool_messages:
-                                combined_text = " ".join(text_items) if len(text_items) > 1 else text_items[0] if text_items else ""
-                                formatted_text = f"【当前用户请求】请专注回答以下问题：\n{combined_text}"
-                                processed_content.insert(0, {"type": "text", "text": formatted_text})
-                                filtered_messages.append({"role": role, "content": processed_content})
-                            else:
-                                if has_text:
-                                    if len(text_items) == 1:
-                                        processed_content.insert(0, {"type": "text", "text": text_items[0]})
-                                    else:
-                                        for text in text_items:
-                                            processed_content.append({"type": "text", "text": text})
-                                filtered_messages.append({"role": role, "content": processed_content})
-                        elif isinstance(content, str):
-                            if is_current_question and not has_tool_messages:
-                                formatted_content = f"【当前用户请求】请专注回答以下问题：\n{content}"
-                                filtered_messages.append({"role": role, "content": formatted_content})
-                            else:
-                                filtered_messages.append({"role": role, "content": content})
-                        
-                elif role == "tool":
-                    # 工具调用结果：智能处理多轮调用
+                # 为最后一条用户消息添加注意力集中前缀
+                if i == last_user_message_index and role == "user":
                     if isinstance(content, str):
-                        try:
-                            import json
-                            content_data = json.loads(content)
-                            if isinstance(content_data, dict):
-                                result_content = content_data.get("result", content_data.get("content", str(content_data)))
-                            else:
-                                result_content = content_data
-                        except:
-                            result_content = content
-                        
-                        # 检查这是第几个工具消息
-                        current_tool_index = len([msg for msg in filtered_messages if msg.get("role") == "tool"])
-                        
-                        if current_tool_index == 0:
-                            # 第一个工具结果：添加整理指令
-                            formatted_content = f"请整理当前工具执行的返回结果：{result_content}"
-                            
-                            # 恢复之前的用户消息格式（如果已添加前缀）
-                            for j in range(len(filtered_messages)-1, -1, -1):
-                                prev_msg = filtered_messages[j]
-                                if prev_msg.get("role") == "user":
-                                    prev_content = prev_msg.get("content", "")
-                                    if isinstance(prev_content, str) and prev_content.startswith("【当前用户请求】"):
-                                        # 移除注意力集中前缀，恢复原始格式
-                                        original_content = prev_content.replace("【当前用户请求】请专注回答以下问题：\n", "")
-                                        filtered_messages[j] = {"role": "user", "content": original_content}
-                                        break
-                                    elif isinstance(prev_content, list):
-                                        for k, item in enumerate(prev_content):
-                                            if isinstance(item, dict) and item.get("type") == "text":
-                                                text = item.get("text", "")
-                                                if isinstance(text, str) and text.startswith("【当前用户请求】"):
-                                                    original_text = text.replace("【当前用户请求】请专注回答以下问题：\n", "")
-                                                    prev_content[k] = {"type": "text", "text": original_text}
-                                                    filtered_messages[j] = {"role": "user", "content": prev_content}
-                                                    break
-                        else:
-                            # 后续工具结果：移除之前工具结果的指令，只添加最新指令
-                            for j in range(len(filtered_messages)-1, -1, -1):
-                                prev_msg = filtered_messages[j]
-                                if prev_msg.get("role") == "tool":
-                                    prev_content = prev_msg.get("content", "")
-                                    if isinstance(prev_content, str) and prev_content.startswith("请整理当前工具执行的返回结果："):
-                                        clean_content = prev_content.replace("请整理当前工具执行的返回结果：", "", 1)
-                                        filtered_messages[j] = {"role": "tool", "content": clean_content}
-                                        break
-                            
-                            formatted_content = f"请整理当前工具执行的返回结果：{result_content}"
-                        
-                        filtered_messages.append({"role": role, "content": formatted_content})
-                    else:
-                        filtered_messages.append({"role": role, "content": content})
-                        
-                elif role == "assistant" and not is_current_virtual_reply:
-                    # 处理非虚拟回复的assistant消息
-                    filtered_messages.append({"role": role, "content": content})
-            
-            # 图片处理
+                        content = f"当前请求：\n{content}\n\n注意：以上是当前需要处理的具体问题，请优先关注并回应当前请求。历史对话仅作为背景信息参考。"
+                    elif isinstance(content, list):
+                        # 对于列表格式的内容，在第一个文本元素前添加前缀
+                        for j, item in enumerate(content):
+                            if isinstance(item, dict) and item.get("type") == "text":
+                                current_text = item.get("text", "")
+                                content[j]["text"] = f"当前请求：\n{current_text}\n\n注意：以上是当前需要处理的具体问题，请优先关注并回应当前请求。历史对话仅作为背景信息参考。"
+                                break
+                
+                filtered_messages.append({"role": role, "content": content})
+                
             if self.image_manager:
                 processed_messages = await self._process_images_in_messages(chat_id, filtered_messages)
                 filtered_messages = processed_messages
-            
+                
             filtered_data = {
                 "model": data_section.get("model", "local_model"),
                 "messages": filtered_messages,
