@@ -67,7 +67,7 @@ TOOL_DEFINITIONS = [
         "type": "function",
         "function": {
             "name": "prompt_service_view_prompt",
-            "description": "查看当前对话的专属提示词设置",
+            "description": "查看当前对话的专属提示词。仅用于当前请求明确是查看提示词内容的请求，才会调用。",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -84,7 +84,7 @@ TOOL_DEFINITIONS = [
         "type": "function",
         "function": {
             "name": "prompt_service_set_prompt",
-            "description": "设置当前对话的专属提示词",
+            "description": "设置当前对话的专属提示词。仅用于当前请求明确是设定提示词内容的请求，才会调用。",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -105,7 +105,7 @@ TOOL_DEFINITIONS = [
         "type": "function",
         "function": {
             "name": "prompt_service_delete_prompt",
-            "description": "删除当前对话的专属提示词",
+            "description": "删除当前对话的专属提示词。仅用于当前请求明确是删除提示词内容的请求，才会调用。",
             "parameters": {
                 "type": "object",
                 "properties": {
