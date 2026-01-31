@@ -2,13 +2,13 @@
 # -*- coding: utf-8 -*-
 """
 Agent_core.py - 异步系统核心调度器
+集成重构后的工具调用系统
 """
 
 import asyncio
 import signal
 import sys
 import logging
-import traceback
 import time
 from pathlib import Path
 from typing import Dict, Any
@@ -97,10 +97,17 @@ class AgentCore:
             
             self.logger.info("初始化工具管理器...")
             self.tool_manager = ToolManager(self.tools_service_dir)
+            
+            # 先设置上下文管理器引用
+            self.tool_manager.set_context_manager(self.context_manager)
+            
+            # 然后初始化工具管理器
             await self.tool_manager.initialize(config)
             
+            # 注入上下文管理器到已加载的模块
+            await self.tool_manager.inject_context_to_modules()
+            
             self.context_manager.set_tool_manager(self.tool_manager)
-            self.tool_manager.set_context_manager(self.context_manager)
             
             self.logger.info("初始化异步队列管理器...")
             self.queue_manager = QueueManager()
@@ -146,6 +153,7 @@ class AgentCore:
                 message_callback=self._handle_incoming_message
             )
             
+            # 更新任务管理器的引用
             self.task_manager.session_manager = self.session_manager
             self.task_manager.essentials_manager = self.essentials_manager
             self.task_manager.port_manager = self.port_manager
@@ -301,6 +309,13 @@ class AgentCore:
             
         if self.context_manager:
             await self.context_manager.shutdown()
+            
+        if self.session_manager:
+            await self.session_manager.shutdown()
+            
+        if self.task_manager:
+            # 清理任务管理器的工具跟踪状态
+            await self.task_manager.cleanup_session_tools("*")
             
     def _setup_signal_handlers(self):
         if sys.platform != "win32":

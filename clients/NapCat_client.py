@@ -41,6 +41,13 @@ class Client:
         # 机器人QQ号
         self.bot_qq_numbers = []
         
+        # 基础指令列表（与EssentialsManager中的命令保持一致）
+        self.base_commands = [
+            "模型列表", "模型查询", "模型更换", 
+            "工具支持", "提示词", "设定提示词", "删除提示词",
+            "上下文清理", "删除上下文", "重载", "热重载", "帮助"
+        ]
+        
         # 运行标志
         self.is_running = False
         
@@ -53,6 +60,29 @@ class Client:
         # 发送队列（单消费者模式）
         self.send_queues = {}  # chat_id -> asyncio.Queue
         self.send_consumers = {}  # chat_id -> asyncio.Task
+        
+    # 添加方法：检查是否是基础指令
+    def _is_base_command(self, content: str) -> bool:
+        """检查内容是否是基础指令"""
+        if not content or not isinstance(content, str):
+            return False
+        
+        # 移除可能的空格和换行符
+        content = content.strip()
+        
+        # 检查是否以 # 开头
+        if not content.startswith('#'):
+            return False
+        
+        # 提取命令部分（去掉 # 前缀）
+        command_parts = content[1:].split()
+        if not command_parts:
+            return False
+        
+        command = command_parts[0]
+        
+        # 检查是否是已知的基础指令
+        return command in self.base_commands
         
     async def start(self, config: Dict[str, Any], message_callback: Callable):
         """
@@ -371,6 +401,16 @@ class Client:
             # 移除CQ码中的@信息，保留纯文本
             clean_text = self._remove_cq_codes(text_content)
             
+            # 检查是否是基础指令
+            if self._is_base_command(clean_text):
+                # 基础指令：不添加发言人前缀，直接发送指令
+                extracted_content.append({
+                    "type": "text",
+                    "text": clean_text
+                })
+                return extracted_content
+            
+            # 如果不是指令，正常处理
             # 如果有图片，分离文本和图片
             image_urls = self._extract_image_urls_from_text(text_content)
             
@@ -413,7 +453,8 @@ class Client:
             
         # 处理数组格式的消息
         if not isinstance(message, list):
-            return self._extract_messages(raw_message, raw_message, "string", display_name)
+            # 如果不是列表，转为字符串处理
+            return self._extract_messages(message, raw_message, "string", display_name)
             
         # 收集所有文本内容
         text_parts = []
@@ -461,6 +502,16 @@ class Client:
         # 合并文本内容
         combined_text = " ".join(text_parts).strip()
         
+        # 检查是否是基础指令
+        if self._is_base_command(combined_text):
+            # 基础指令：不添加发言人前缀，直接发送指令
+            extracted_content.append({
+                "type": "text",
+                "text": combined_text
+            })
+            return extracted_content
+        
+        # 如果不是指令，正常处理
         # 如果有文本内容
         if combined_text:
             # 添加发言人身份标识
@@ -572,6 +623,16 @@ class Client:
         # 合并文本内容
         combined_text = " ".join(text_parts).strip()
         
+        # 检查是否是基础指令
+        if self._is_base_command(combined_text):
+            # 基础指令：不添加发言人前缀，直接发送指令
+            extracted_content.append({
+                "type": "text",
+                "text": combined_text
+            })
+            return extracted_content, contains_at_bot
+        
+        # 如果不是指令，正常处理
         # 如果有文本内容
         if combined_text:
             formatted_text = f"发言人：{display_name}。\n发言内容：{combined_text}"
@@ -659,6 +720,14 @@ class Client:
         # 如果@了机器人，始终响应
         if contains_at_bot:
             return True
+            
+        # 检查是否是基础指令（指令消息即使没有@也应该响应）
+        if extracted_messages and len(extracted_messages) == 1:
+            first_item = extracted_messages[0]
+            if first_item.get("type") == "text":
+                text_content = first_item.get("text", "")
+                if self._is_base_command(text_content):
+                    return True
             
         # 全响应模式：按概率随机响应
         if respond_to_all:

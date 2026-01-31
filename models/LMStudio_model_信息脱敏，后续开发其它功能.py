@@ -227,6 +227,16 @@ class Model:
             # 记录请求开始时间
             start_time = time.time()
             
+            # 记录请求数据（脱敏）
+            log_data = session_data.copy()
+            if "messages" in log_data:
+                for i, msg in enumerate(log_data.get("messages", [])):
+                    if "content" in msg and isinstance(msg["content"], str):
+                        # 保存原始长度信息
+                        original_length = len(msg["content"])
+            
+            self.logger.debug(f"模型请求数据: {json.dumps(log_data, ensure_ascii=False)[:200]}...")
+            
             # 为每个请求创建独立的会话，不设置超时
             async with aiohttp.ClientSession() as session:
                 # 发送异步HTTP请求
