@@ -1,9 +1,5 @@
+# image_manager.py
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-image_manager.py - 混合架构图片管理器
-异步并发处理IO，多线程并行处理CPU密集型转码
-"""
 
 import asyncio
 import aiohttp
@@ -13,25 +9,20 @@ import time
 import hashlib
 import json
 from pathlib import Path
-from typing import Dict, Any, List, Optional, Tuple
-from dataclasses import dataclass
 from collections import OrderedDict
-import re
 from concurrent.futures import ThreadPoolExecutor
 
-
-@dataclass
 class ImageCacheItem:
-    image_id: str
-    chat_id: str
-    url: str
-    base64_data: str
-    mime_type: str
-    created_at: float
-    last_accessed: float
-    is_processing: bool
-    size: int
-
+    def __init__(self, image_id, chat_id, url, base64_data, mime_type, size):
+        self.image_id = image_id
+        self.chat_id = chat_id
+        self.url = url
+        self.base64_data = base64_data
+        self.mime_type = mime_type
+        self.created_at = time.time()
+        self.last_accessed = time.time()
+        self.is_processing = False
+        self.size = size
 
 class ImageManager:
     def __init__(self):
@@ -71,7 +62,6 @@ class ImageManager:
             "downloads": 0,
             "encodings": 0,
             "errors": 0,
-            "encoding_thread_usage": 0
         }
         
     async def initialize(self):
@@ -89,9 +79,8 @@ class ImageManager:
     async def _load_config(self):
         if self.config_file.exists():
             try:
-                loop = asyncio.get_event_loop()
                 with open(self.config_file, 'r', encoding='utf-8') as f:
-                    self.config = await loop.run_in_executor(None, json.load, f)
+                    self.config = json.load(f)
             except Exception as e:
                 self.logger.error(f"加载图片配置文件失败: {e}")
                 self.config = self.default_config
@@ -102,23 +91,19 @@ class ImageManager:
             
     async def _save_config(self):
         try:
-            loop = asyncio.get_event_loop()
             with open(self.config_file, 'w', encoding='utf-8') as f:
-                await loop.run_in_executor(
-                    None, 
-                    lambda: json.dump(self.config, f, ensure_ascii=False, indent=2)
-                )
+                json.dump(self.config, f, ensure_ascii=False, indent=2)
         except Exception as e:
             self.logger.error(f"保存图片配置文件失败: {e}")
             
-    def _generate_image_id(self, url: str) -> str:
+    def _generate_image_id(self, url):
         return hashlib.md5(url.encode()).hexdigest()
         
-    def _is_privilege_chat(self, chat_id: str) -> bool:
+    def _is_privilege_chat(self, chat_id):
         privilege_list = self.config.get("privilege", [])
         return chat_id in privilege_list
         
-    def _get_chat_cache_config(self, chat_id: str) -> Tuple[int, int]:
+    def _get_chat_cache_config(self, chat_id):
         is_privilege = self._is_privilege_chat(chat_id)
         
         if is_privilege:
@@ -130,7 +115,7 @@ class ImageManager:
             
         return ttl, max_items
         
-    async def analyze_message(self, message_data: Dict[str, Any]) -> Dict[str, Any]:
+    async def analyze_message(self, message_data):
         try:
             chat_id = message_data.get("chat_id")
             content = message_data.get("content", "")
@@ -169,7 +154,7 @@ class ImageManager:
             self.logger.error(f"分析消息失败: {e}")
             return {"success": False, "error": str(e)}
             
-    def _extract_image_urls(self, content: Any) -> List[str]:
+    def _extract_image_urls(self, content):
         image_urls = []
         
         if not isinstance(content, list):
@@ -191,7 +176,7 @@ class ImageManager:
                 
         return image_urls
         
-    async def _process_image_url(self, chat_id: str, url: str) -> Dict[str, Any]:
+    async def _process_image_url(self, chat_id, url):
         try:
             image_id = self._generate_image_id(url)
             
@@ -233,7 +218,7 @@ class ImageManager:
             self.stats["errors"] += 1
             return {"success": False, "error": str(e), "url": url}
             
-    async def _download_and_encode_image(self, chat_id: str, url: str, image_id: str) -> Dict[str, Any]:
+    async def _download_and_encode_image(self, chat_id, url, image_id):
         try:
             async with self.download_semaphore:
                 image_data, mime_type = await self._download_image(url)
@@ -243,8 +228,7 @@ class ImageManager:
             if not image_data:
                 return {"success": False, "error": "下载失败", "url": url}
                 
-            loop = asyncio.get_event_loop()
-            base64_data = await loop.run_in_executor(
+            base64_data = await asyncio.get_event_loop().run_in_executor(
                 self.thread_pool,
                 self._encode_to_base64_sync,
                 image_data,
@@ -259,9 +243,6 @@ class ImageManager:
                 url=url,
                 base64_data=base64_data,
                 mime_type=mime_type,
-                created_at=time.time(),
-                last_accessed=time.time(),
-                is_processing=False,
                 size=len(base64_data)
             )
             
@@ -281,7 +262,7 @@ class ImageManager:
             self.stats["errors"] += 1
             return {"success": False, "error": str(e), "url": url}
             
-    def _encode_to_base64_sync(self, image_data: bytes, mime_type: str) -> str:
+    def _encode_to_base64_sync(self, image_data, mime_type):
         try:
             base64_encoded = base64.b64encode(image_data).decode('utf-8')
             
@@ -296,7 +277,7 @@ class ImageManager:
             self.logger.error(f"base64编码失败: {e}")
             raise
             
-    async def _download_image(self, url: str) -> Tuple[bytes, str]:
+    async def _download_image(self, url):
         try:
             timeout = aiohttp.ClientTimeout(
                 total=self.config.get("concurrency", {}).get("download_timeout", 30)
@@ -320,7 +301,7 @@ class ImageManager:
             self.logger.error(f"下载图片异常: {e}, URL: {url}")
             return None, None
             
-    async def _get_from_cache(self, chat_id: str, image_id: str) -> Optional[ImageCacheItem]:
+    async def _get_from_cache(self, chat_id, image_id):
         async with self.lock:
             if image_id in self.image_cache:
                 cache_item = self.image_cache[image_id]
@@ -335,7 +316,7 @@ class ImageManager:
                     
         return None
         
-    async def get_image_base64(self, chat_id: str, url: str) -> Optional[str]:
+    async def get_image_base64(self, chat_id, url):
         try:
             image_id = self._generate_image_id(url)
             cache_item = await self._get_from_cache(chat_id, image_id)
@@ -347,7 +328,7 @@ class ImageManager:
             self.logger.error(f"获取图片base64失败: {e}")
             return None
             
-    async def _save_to_cache(self, cache_item: ImageCacheItem):
+    async def _save_to_cache(self, cache_item):
         async with self.lock:
             self.image_cache[cache_item.image_id] = cache_item
             
@@ -395,13 +376,12 @@ class ImageManager:
             except Exception as e:
                 self.logger.error(f"清理守护任务异常: {e}")
                 
-    async def get_cache_status(self) -> Dict[str, Any]:
+    async def get_cache_status(self):
         async with self.lock:
             thread_pool_status = {}
             if self.thread_pool:
                 thread_pool_status = {
                     "max_workers": self.thread_pool._max_workers,
-                    "active_threads": self.thread_pool._threads - len(self.thread_pool._idle_semaphore._value),
                 }
             
             status = {
@@ -423,7 +403,7 @@ class ImageManager:
                 
             return status
             
-    async def clear_chat_cache(self, chat_id: str) -> bool:
+    async def clear_chat_cache(self, chat_id):
         try:
             async with self.lock:
                 if chat_id in self.chat_cache:
@@ -437,7 +417,7 @@ class ImageManager:
             self.logger.error(f"清理对话缓存失败: {e}")
             return False
             
-    async def clear_all_cache(self) -> bool:
+    async def clear_all_cache(self):
         try:
             async with self.lock:
                 self.image_cache.clear()

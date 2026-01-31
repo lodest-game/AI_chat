@@ -1,26 +1,19 @@
+# queue_manager.py
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-queue_manager.py - 异步队列管理器
-"""
 
 import asyncio
 import logging
 import time
-from typing import Dict, Any, Optional, Callable, Deque
-from collections import defaultdict, deque
-from dataclasses import dataclass
+from collections import defaultdict
 
-
-@dataclass
 class QueueTask:
-    task_id: str
-    chat_id: str
-    task_data: Dict[str, Any]
-    workflow_type: str
-    created_at: float
-    priority: int = 0
-
+    def __init__(self, task_id, chat_id, task_data, workflow_type, priority=0):
+        self.task_id = task_id
+        self.chat_id = chat_id
+        self.task_data = task_data
+        self.workflow_type = workflow_type
+        self.created_at = time.time()
+        self.priority = priority
 
 class QueueManager:
     def __init__(self):
@@ -36,21 +29,21 @@ class QueueManager:
         self.lock = asyncio.Lock()
         self.task_counter = 0
         
-    async def initialize(self, config: Dict[str, Any]):
+    async def initialize(self, config):
         self.is_running = True
         
-    def set_task_callback(self, callback: Callable):
+    def set_task_callback(self, callback):
         self.task_callback = callback
         
-    def set_message_callback(self, callback: Callable):
+    def set_message_callback(self, callback):
         self.message_callback = callback
         
-    async def _get_next_task_id(self) -> str:
+    async def _get_next_task_id(self):
         async with self.lock:
             self.task_counter += 1
             return f"task_{self.task_counter}_{int(time.time())}"
         
-    async def enqueue_message(self, chat_id: str, task_data: Dict[str, Any]) -> str:
+    async def enqueue_message(self, chat_id, task_data):
         if not self.is_running:
             return None
             
@@ -64,8 +57,7 @@ class QueueManager:
             task_id=task_id,
             chat_id=chat_id,
             task_data=task_data,
-            workflow_type=workflow_type,
-            created_at=time.time()
+            workflow_type=workflow_type
         )
         
         if chat_id not in self.message_queues:
@@ -78,7 +70,7 @@ class QueueManager:
         except asyncio.QueueFull:
             return None
             
-    async def enqueue_llm(self, chat_id: str, task_data: Dict[str, Any]) -> str:
+    async def enqueue_llm(self, chat_id, task_data):
         if not self.is_running:
             return None
             
@@ -91,8 +83,7 @@ class QueueManager:
             task_id=task_id,
             chat_id=chat_id,
             task_data=task_data,
-            workflow_type="C",
-            created_at=time.time()
+            workflow_type="C"
         )
         
         if chat_id not in self.llm_queues:
@@ -105,7 +96,7 @@ class QueueManager:
         except asyncio.QueueFull:
             return None
             
-    async def _validate_task_data(self, task_data: Dict[str, Any], queue_type: str) -> bool:
+    async def _validate_task_data(self, task_data, queue_type):
         if not task_data:
             return False
             
@@ -119,24 +110,24 @@ class QueueManager:
                 
         return True
         
-    async def _determine_workflow_type(self, task_data: Dict[str, Any]) -> str:
+    async def _determine_workflow_type(self, task_data):
         return "B" if task_data.get("is_respond") == True else "A"
             
-    async def _start_message_consumer(self, chat_id: str):
+    async def _start_message_consumer(self, chat_id):
         if chat_id in self.message_consumers:
             return
             
         consumer_task = asyncio.create_task(self._message_consumer_loop(chat_id))
         self.message_consumers[chat_id] = consumer_task
         
-    async def _start_llm_consumer(self, chat_id: str):
+    async def _start_llm_consumer(self, chat_id):
         if chat_id in self.llm_consumers:
             return
             
         consumer_task = asyncio.create_task(self._llm_consumer_loop(chat_id))
         self.llm_consumers[chat_id] = consumer_task
         
-    async def _message_consumer_loop(self, chat_id: str):
+    async def _message_consumer_loop(self, chat_id):
         queue = self.message_queues.get(chat_id)
         if not queue:
             return
@@ -162,7 +153,7 @@ class QueueManager:
                 self.logger.error(f"消息队列消费者异常 {chat_id}: {e}")
                 await asyncio.sleep(1)
                 
-    async def _llm_consumer_loop(self, chat_id: str):
+    async def _llm_consumer_loop(self, chat_id):
         queue = self.llm_queues.get(chat_id)
         if not queue:
             return
@@ -188,7 +179,7 @@ class QueueManager:
                 self.logger.error(f"LLM队列消费者异常 {chat_id}: {e}")
                 await asyncio.sleep(1)
         
-    async def _process_message_task(self, task: QueueTask):
+    async def _process_message_task(self, task):
         try:
             if self.task_callback:
                 result = await self.task_callback({
@@ -205,7 +196,7 @@ class QueueManager:
         except Exception as e:
             self.logger.error(f"消息任务处理失败: {task.task_id}, 错误: {e}")
             
-    async def _process_llm_task(self, task: QueueTask):
+    async def _process_llm_task(self, task):
         try:
             if self.task_callback:
                 result = await self.task_callback({
@@ -222,7 +213,7 @@ class QueueManager:
         except Exception as e:
             self.logger.error(f"LLM任务处理失败: {task.task_id}, 错误: {e}")
             
-    async def get_queue_status(self, queue_type: str = None, chat_id: str = None) -> Dict[str, Any]:
+    async def get_queue_status(self, queue_type=None, chat_id=None):
         status = {}
         
         if queue_type == "message" or queue_type is None:
@@ -257,7 +248,7 @@ class QueueManager:
                 
         return status
         
-    async def clear_queue(self, queue_type: str, chat_id: str = None):
+    async def clear_queue(self, queue_type, chat_id=None):
         if queue_type == "message":
             if chat_id:
                 queue = self.message_queues.get(chat_id)

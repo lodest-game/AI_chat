@@ -1,8 +1,4 @@
-"""
-plugins包初始化文件
-允许Python将plugins目录作为包导入
-"""
-
+# __init__.py
 __version__ = "1.0.0"
 __all__ = [
     "config_manager",

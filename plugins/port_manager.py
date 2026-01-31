@@ -1,42 +1,33 @@
+# port_manager.py
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-port_manager.py - 端口与路由管理器
-"""
 
-import os
 import importlib
 import logging
 import asyncio
 import json
 import time
 from pathlib import Path
-from typing import Dict, Any, List, Optional, Callable
-from dataclasses import dataclass
 
-
-@dataclass
 class ClientConnection:
-    name: str
-    module: Any
-    config: Dict[str, Any]
-    is_connected: bool = False
-    last_active: float = 0
+    def __init__(self, name, module, config):
+        self.name = name
+        self.module = module
+        self.config = config
+        self.is_connected = False
+        self.last_active = 0
 
-
-@dataclass
 class ModelConnection:
-    name: str
-    module: Any
-    config: Dict[str, Any]
-    is_connected: bool = False
-    last_used: float = 0
-    concurrent_requests: int = 0
-    max_concurrent_requests: int = 10
-
+    def __init__(self, name, module, config):
+        self.name = name
+        self.module = module
+        self.config = config
+        self.is_connected = False
+        self.last_used = 0
+        self.concurrent_requests = 0
+        self.max_concurrent_requests = config.get("performance", {}).get("max_concurrent_requests", 10)
 
 class PortManager:
-    def __init__(self, clients_dir: Path, models_dir: Path):
+    def __init__(self, clients_dir, models_dir):
         self.logger = logging.getLogger(__name__)
         self.clients_dir = Path(clients_dir)
         self.models_dir = Path(models_dir)
@@ -49,7 +40,7 @@ class PortManager:
         self.model_lock = asyncio.Lock()
         self.active_tasks = set()
         
-    async def initialize(self, config: Dict[str, Any], message_callback: Callable = None):
+    async def initialize(self, config, message_callback=None):
         self.config = config
         self.message_callback = message_callback
         
@@ -75,7 +66,7 @@ class PortManager:
         if scan_tasks:
             await asyncio.gather(*scan_tasks, return_exceptions=True)
                 
-    async def _load_client_module_async(self, client_file: Path):
+    async def _load_client_module_async(self, client_file):
         module_name = client_file.stem
         if not module_name.endswith("_client"):
             return
@@ -95,9 +86,8 @@ class PortManager:
             config = {}
             if config_path.exists():
                 try:
-                    loop = asyncio.get_event_loop()
                     with open(config_path, 'r', encoding='utf-8') as f:
-                        config = await loop.run_in_executor(None, json.load, f)
+                        config = json.load(f)
                 except Exception as e:
                     self.logger.error(f"加载客户端配置失败 {config_path}: {e}")
                     
@@ -105,8 +95,7 @@ class PortManager:
             connection = ClientConnection(
                 name=module_name,
                 module=client_instance,
-                config=config,
-                is_connected=False
+                config=config
             )
             
             self.client_connections[module_name] = connection
@@ -114,7 +103,7 @@ class PortManager:
         except Exception as e:
             self.logger.error(f"导入客户端模块失败 {module_name}: {e}")
             
-    async def _load_model_module_async(self, model_file: Path):
+    async def _load_model_module_async(self, model_file):
         module_name = model_file.stem
         if not module_name.endswith("_model"):
             return
@@ -134,9 +123,8 @@ class PortManager:
             config = {}
             if config_path.exists():
                 try:
-                    loop = asyncio.get_event_loop()
                     with open(config_path, 'r', encoding='utf-8') as f:
-                        config = await loop.run_in_executor(None, json.load, f)
+                        config = json.load(f)
                 except Exception as e:
                     self.logger.error(f"加载服务端配置失败 {config_path}: {e}")
                     
@@ -144,9 +132,7 @@ class PortManager:
             connection = ModelConnection(
                 name=module_name,
                 module=model_instance,
-                config=config,
-                is_connected=False,
-                max_concurrent_requests=config.get("performance", {}).get("max_concurrent_requests", 10)
+                config=config
             )
             
             self.model_connections[module_name] = connection
@@ -168,7 +154,7 @@ class PortManager:
         if start_tasks:
             await asyncio.gather(*start_tasks, return_exceptions=True)
                 
-    async def _start_client_connection_async(self, client_name: str, connection: ClientConnection):
+    async def _start_client_connection_async(self, client_name, connection):
         try:
             if hasattr(connection.module, 'start'):
                 await connection.module.start(
@@ -185,7 +171,7 @@ class PortManager:
         except Exception as e:
             self.logger.error(f"启动客户端 {client_name} 失败: {e}")
             
-    async def _start_model_connection_async(self, model_name: str, connection: ModelConnection):
+    async def _start_model_connection_async(self, model_name, connection):
         try:
             if hasattr(connection.module, 'start'):
                 await connection.module.start(config=connection.config)
@@ -199,7 +185,7 @@ class PortManager:
         except Exception as e:
             self.logger.error(f"启动服务端 {model_name} 失败: {e}")
             
-    async def _monitor_client_connection_async(self, client_name: str, connection: ClientConnection):
+    async def _monitor_client_connection_async(self, client_name, connection):
         while self.is_running and connection.is_connected:
             try:
                 await asyncio.sleep(30)
@@ -223,7 +209,7 @@ class PortManager:
             except Exception as e:
                 self.logger.error(f"监控客户端连接失败 {client_name}: {e}")
                 
-    async def _monitor_model_connection_async(self, model_name: str, connection: ModelConnection):
+    async def _monitor_model_connection_async(self, model_name, connection):
         while self.is_running and connection.is_connected:
             try:
                 await asyncio.sleep(30)
@@ -247,7 +233,7 @@ class PortManager:
             except Exception as e:
                 self.logger.error(f"监控服务端连接失败 {model_name}: {e}")
                 
-    async def _reconnect_client_async(self, client_name: str, connection: ClientConnection):
+    async def _reconnect_client_async(self, client_name, connection):
         max_attempts = connection.config.get("connection", {}).get("max_reconnect_attempts", 3)
         reconnect_interval = connection.config.get("connection", {}).get("reconnect_interval", 5)
         
@@ -260,7 +246,7 @@ class PortManager:
                 self.logger.error(f"客户端重连失败 {client_name} (第{attempt}次): {e}")
             await asyncio.sleep(reconnect_interval)
             
-    async def _reconnect_model_async(self, model_name: str, connection: ModelConnection):
+    async def _reconnect_model_async(self, model_name, connection):
         max_attempts = connection.config.get("connection", {}).get("max_reconnect_attempts", 3)
         reconnect_interval = connection.config.get("connection", {}).get("reconnect_interval", 5)
         
@@ -273,7 +259,7 @@ class PortManager:
                 self.logger.error(f"服务端重连失败 {model_name} (第{attempt}次): {e}")
             await asyncio.sleep(reconnect_interval)
             
-    async def _handle_client_message_async(self, message_data: Dict[str, Any]):
+    async def _handle_client_message_async(self, message_data):
         if not self.message_callback:
             return
             
@@ -284,13 +270,12 @@ class PortManager:
             if asyncio.iscoroutinefunction(self.message_callback):
                 await self.message_callback(message_data)
             else:
-                loop = asyncio.get_event_loop()
-                await loop.run_in_executor(None, lambda: self.message_callback(message_data))
+                await asyncio.get_event_loop().run_in_executor(None, lambda: self.message_callback(message_data))
                 
         except Exception as e:
             self.logger.error(f"处理客户端消息失败: {e}")
             
-    async def send_response_async(self, response_data: Dict[str, Any]):
+    async def send_response_async(self, response_data):
         if not response_data or "chat_id" not in response_data:
             return
             
@@ -304,7 +289,7 @@ class PortManager:
         if send_tasks:
             await asyncio.gather(*send_tasks, return_exceptions=True)
                     
-    async def _send_message_to_client_async(self, connection: ClientConnection, response_data: Dict[str, Any]):
+    async def _send_message_to_client_async(self, connection, response_data):
         try:
             if hasattr(connection.module, 'send_message_async'):
                 await connection.module.send_message_async(response_data)
@@ -312,7 +297,7 @@ class PortManager:
         except Exception as e:
             self.logger.error(f"发送消息到客户端失败 {connection.name}: {e}")
             
-    async def send_to_model_async(self, request_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    async def send_to_model_async(self, request_data):
         if not request_data:
             return None
             
@@ -336,7 +321,7 @@ class PortManager:
             async with self.model_lock:
                 selected_model.concurrent_requests -= 1
                     
-    async def get_status_async(self) -> Dict[str, Any]:
+    async def get_status_async(self):
         status = {
             "is_running": self.is_running,
             "active_tasks": len(self.active_tasks),
@@ -382,7 +367,7 @@ class PortManager:
         if stop_tasks:
             await asyncio.gather(*stop_tasks, return_exceptions=True)
             
-    async def _stop_client_connection_async(self, client_name: str, connection: ClientConnection):
+    async def _stop_client_connection_async(self, client_name, connection):
         try:
             if connection.is_connected and hasattr(connection.module, 'stop'):
                 await connection.module.stop()
@@ -390,7 +375,7 @@ class PortManager:
         except Exception as e:
             self.logger.error(f"停止客户端连接失败 {client_name}: {e}")
             
-    async def _stop_model_connection_async(self, model_name: str, connection: ModelConnection):
+    async def _stop_model_connection_async(self, model_name, connection):
         try:
             if connection.is_connected and hasattr(connection.module, 'stop'):
                 await connection.module.stop()

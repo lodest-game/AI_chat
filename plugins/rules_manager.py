@@ -1,13 +1,8 @@
+# rules_manager.py
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-rules_manager.py - 异步规则与工作流管理器
-"""
 
 import asyncio
 import logging
-from typing import Dict, Any, Optional, Callable
-
 
 class RulesManager:
     def __init__(self):
@@ -18,7 +13,7 @@ class RulesManager:
         self.parallel_mode = "wait"
         self.is_running = False
         
-    async def initialize(self, config: Dict[str, Any], **kwargs):
+    async def initialize(self, config, **kwargs):
         self.config = config
         
         for key, value in kwargs.items():
@@ -28,7 +23,7 @@ class RulesManager:
         self.parallel_mode = config.get("system", {}).get("rules_manager", {}).get("mode", "wait")
         self.is_running = True
         
-    async def handle_workflow_b_result(self, workflow_result: Dict[str, Any]):
+    async def handle_workflow_b_result(self, workflow_result):
         if not self.is_running:
             return
             
@@ -46,7 +41,7 @@ class RulesManager:
         elif self.parallel_mode == "wait":
             await self._handle_wait_mode(workflow_result)
             
-    async def _handle_all_mode(self, workflow_result: Dict[str, Any]):
+    async def _handle_all_mode(self, workflow_result):
         try:
             task = asyncio.create_task(self._execute_workflow_c(workflow_result))
             task.add_done_callback(
@@ -55,7 +50,7 @@ class RulesManager:
         except Exception as e:
             self.logger.error(f"完全并行模式处理失败: {e}")
             
-    async def _handle_wait_mode(self, workflow_result: Dict[str, Any]):
+    async def _handle_wait_mode(self, workflow_result):
         try:
             chat_id = workflow_result.get("chat_id")
             
@@ -75,7 +70,7 @@ class RulesManager:
         except Exception as e:
             self.logger.error(f"局部并行模式处理失败: {e}")
             
-    async def _execute_workflow_c(self, workflow_result: Dict[str, Any]) -> Dict[str, Any]:
+    async def _execute_workflow_c(self, workflow_result):
         if not self.task_manager:
             return {"success": False, "error": "task_manager未初始化"}
             
@@ -96,20 +91,20 @@ class RulesManager:
             self.logger.error(f"异步执行工作流C失败: {e}")
             return {"success": False, "error": str(e)}
             
-    async def _handle_workflow_c_result(self, result: Dict[str, Any]):
+    async def _handle_workflow_c_result(self, result):
         if result.get("success"):
             if hasattr(self, "result_callback") and self.result_callback:
                 await self.result_callback(result)
         else:
             self.logger.error(f"工作流C执行失败: {result.get('error')}")
             
-    def set_result_callback(self, callback: Callable):
+    def set_result_callback(self, callback):
         self.result_callback = callback
         
-    def get_mode(self) -> str:
+    def get_mode(self):
         return self.parallel_mode
         
-    def set_mode(self, mode: str):
+    def set_mode(self, mode):
         if mode not in ["all", "wait"]:
             return
             
@@ -118,7 +113,7 @@ class RulesManager:
             
         self.parallel_mode = mode
         
-    async def get_status(self) -> Dict[str, Any]:
+    async def get_status(self):
         return {
             "parallel_mode": self.parallel_mode,
             "is_running": self.is_running,

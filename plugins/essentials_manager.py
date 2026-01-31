@@ -1,13 +1,8 @@
+# essentials_manager.py
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-essentials_manager.py - 基础指令处理器
-"""
 
 import re
 import logging
-from typing import Dict, Any, List, Optional, Tuple
-
 
 class EssentialsManager:
     def __init__(self):
@@ -33,7 +28,7 @@ class EssentialsManager:
             "帮助": self._handle_help
         }
         
-    async def initialize(self, config: Dict[str, Any], **kwargs):
+    async def initialize(self, config, **kwargs):
         self.config = config
         
         for key, value in kwargs.items():
@@ -43,7 +38,7 @@ class EssentialsManager:
         essentials_config = config.get("system", {}).get("essentials_manager", {})
         self.admin_chats = set(essentials_config.get("admin_chats", []))
         
-    def is_command(self, message_data: Dict[str, Any]) -> bool:
+    def is_command(self, message_data):
         if not message_data or "content" not in message_data or message_data.get("role") == "assistant":
             return False
             
@@ -68,7 +63,7 @@ class EssentialsManager:
             
         return False
             
-    async def execute_command(self, message_data: Dict[str, Any]) -> Dict[str, Any]:
+    async def execute_command(self, message_data):
         try:
             content = message_data.get("content", "")
             chat_id = message_data.get("chat_id", "")
@@ -111,7 +106,7 @@ class EssentialsManager:
             self.logger.error(f"执行指令失败: {e}")
             return self._create_error_response(f"指令执行失败: {str(e)}")
             
-    async def _parse_command(self, content: Any) -> Tuple[Optional[str], List[str]]:
+    async def _parse_command(self, content):
         if isinstance(content, list):
             text_parts = []
             for item in content:
@@ -136,7 +131,7 @@ class EssentialsManager:
         args = parts[1:] if len(parts) > 1 else []
         return command, args
         
-    async def _check_permission(self, chat_id: str, user_id: str, command: str = None) -> bool:
+    async def _check_permission(self, chat_id, user_id, command=None):
         common_commands = {
             "模型列表", "模型查询", "模型更换", 
             "工具支持", "提示词", "设定提示词", "删除提示词",
@@ -156,7 +151,7 @@ class EssentialsManager:
         
         return False
         
-    async def _handle_model_list(self, args: List[str], chat_id: str, user_id: str) -> Dict[str, Any]:
+    async def _handle_model_list(self, args, chat_id, user_id):
         if not self.config:
             return self._create_error_response("配置未初始化")
             
@@ -177,7 +172,7 @@ class EssentialsManager:
             "command": "模型列表"
         }
         
-    async def _handle_model_query(self, args: List[str], chat_id: str, user_id: str) -> Dict[str, Any]:
+    async def _handle_model_query(self, args, chat_id, user_id):
         if not self.context_manager:
             return self._create_error_response("上下文管理器未初始化")
             
@@ -197,7 +192,7 @@ class EssentialsManager:
             "current_model": current_model
         }
         
-    async def _handle_model_change(self, args: List[str], chat_id: str, user_id: str) -> Dict[str, Any]:
+    async def _handle_model_change(self, args, chat_id, user_id):
         if not args:
             return self._create_error_response("请指定要更换的模型名称")
             
@@ -225,7 +220,7 @@ class EssentialsManager:
             "new_model": new_model
         }
         
-    async def _handle_tools_toggle(self, args: List[str], chat_id: str, user_id: str) -> Dict[str, Any]:
+    async def _handle_tools_toggle(self, args, chat_id, user_id):
         if not args:
             return self._create_error_response("请指定 true 或 false")
             
@@ -251,7 +246,7 @@ class EssentialsManager:
             "tools_call_enabled": enable_tools
         }
         
-    async def _handle_prompt_query(self, args: List[str], chat_id: str, user_id: str) -> Dict[str, Any]:
+    async def _handle_prompt_query(self, args, chat_id, user_id):
         if not self.context_manager:
             return self._create_error_response("上下文管理器未初始化")
             
@@ -276,7 +271,7 @@ class EssentialsManager:
             "custom_prompt": get_result.get("custom_prompt", "")
         }
         
-    async def _handle_prompt_set(self, args: List[str], chat_id: str, user_id: str) -> Dict[str, Any]:
+    async def _handle_prompt_set(self, args, chat_id, user_id):
         if not args:
             return self._create_error_response("请指定要设置的提示词内容")
             
@@ -296,7 +291,7 @@ class EssentialsManager:
             "new_prompt": new_prompt
         }
         
-    async def _handle_prompt_delete(self, args: List[str], chat_id: str, user_id: str) -> Dict[str, Any]:
+    async def _handle_prompt_delete(self, args, chat_id, user_id):
         if not self.context_manager:
             return self._create_error_response("上下文管理器未初始化")
             
@@ -311,7 +306,7 @@ class EssentialsManager:
             "command": "删除提示词"
         }
         
-    async def _handle_context_clear(self, args: List[str], chat_id: str, user_id: str) -> Dict[str, Any]:
+    async def _handle_context_clear(self, args, chat_id, user_id):
         if not self.context_manager:
             return self._create_error_response("上下文管理器未初始化")
             
@@ -326,7 +321,7 @@ class EssentialsManager:
             "command": "上下文清理"
         }
         
-    async def _handle_reload(self, args: List[str], chat_id: str, user_id: str) -> Dict[str, Any]:
+    async def _handle_reload(self, args, chat_id, user_id):
         if not self.tool_manager:
             return self._create_error_response("工具管理器未初始化")
             
@@ -341,7 +336,7 @@ class EssentialsManager:
             "command": "重载"
         }
         
-    async def _handle_help(self, args: List[str], chat_id: str, user_id: str) -> Dict[str, Any]:
+    async def _handle_help(self, args, chat_id, user_id):
         try:
             all_commands = [
                 ("#模型列表", "查看所有可用模型", "普通指令"),
@@ -379,19 +374,19 @@ class EssentialsManager:
             self.logger.error(f"生成帮助信息失败: {e}")
             return self._create_error_response(f"生成帮助信息失败: {str(e)}")
         
-    def _create_error_response(self, error_msg: str) -> Dict[str, Any]:
+    def _create_error_response(self, error_msg):
         return {
             "success": False,
             "content": f"错误: {error_msg}",
             "error": error_msg
         }
         
-    def get_supported_commands(self) -> List[str]:
+    def get_supported_commands(self):
         return list(self.commands.keys())
         
-    def add_admin_chat(self, chat_id: str):
+    def add_admin_chat(self, chat_id):
         self.admin_chats.add(chat_id)
         
-    def remove_admin_chat(self, chat_id: str):
+    def remove_admin_chat(self, chat_id):
         if chat_id in self.admin_chats:
             self.admin_chats.remove(chat_id)
