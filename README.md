@@ -1,6 +1,7 @@
 # 提示：模型建议采用8B-Q4以上，4B模型容易遇到睿智调用问题。默认采用qwen-vl识图模型，如果仅需LLM，请自行修改配置文件。
 # 警告：我并不会编程，也不是有关编程职业，只是一条社会蛆虫，我只提出了具体并且完善的逻辑和思路，所有的代码实现，都是由AI实现的。
 # 警告：请勿进行人身攻击，我也不完全会使用GitHub，如果你提交一些申请，我大概率不知道怎么操作，导致不会回复等，最后的最后，这个项目的维护全看运气，万一我就搞懂了呢？万一呢？
+# 总感觉，好像readme有什么重要的信息忘记写了，是什么呢？之前还能想到的，忽然想不起来了，淦！
 
 # 异步AI代理系统 (Asynchronous AI Agent System)
 
@@ -302,12 +303,57 @@ async-ai-agent/
 {
   "system": {
     "context_manager": {
-      "default_model": "local_model",
-      "max_user_messages_per_chat": 20,
-      "virtual_reply_enabled": true
+      "default_model": "local_model", # 默认模型
+      "chat_mode": { # 模型列表
+        "LLM": [],
+        "MLLM": [
+          "local_model" # 默认模型属于MLLM-多模态模型（识图类）
+        ]
+      },
+      "default_tools_call": true, # 默认模型工具调用启用
+      "model": {
+        "max_tokens": 64000, # 限制模型最大上下文token
+        "temperature": 0.7, # 是否允许模型输出内容更自由化，值越大，幻觉越大，信息越是拟人，回复越是跳跃
+        "stream": false # 是否启用模型流式输出，注意：除非你的前端支持流式输出，否则请勿修改（流式输出理论上会导致会话被清除，无法正常输出）
+      },
+      "core_prompt": [ # 默认核心提示词（专属提示词不在此处配置，仅配置核心的基础提示词，用于系统级别的安全限制）
+        "你是一个即时聊天的参与者。在群聊中存在多个用户会同时发言。",
+        "【自主决策指南】",
+        "作为自主即时聊天参与者，请遵循以下决策原则：",
+        "1. 工具调用判断：只有在用户明确要求工具相关操作时调用工具",
+        "2. 总结类请求：用户要求总结时，专注分析对话历史即可，无需外部工具",
+        "3. 决策信心度：如果不确定是否需要工具，优先选择不调用",
+        "4. 意图验证：如果用户意图模糊，可通过对话澄清，而非直接调用工具",
+        "你所处的环境是即时聊天平台，请关注当前问题，历史问题作为聊天背景，面对即时聊天，存在大量无效噪音，请过滤无效信息后回答。",
+        "接受的信息格式中，'发言人'表示发言人昵称。'发言内容'表示具体的用户讨论信息。",
+        "消息格式中'发言人'表示发言者身份，例如'发言人：腾讯网'表示'腾讯网'这个用户说的话。",
+        "请以自然、流畅的方式参与对话，直接回应当前用户的问题或评论。",
+        "不需要复述完整的用户发言内容，只需针对性地回复。",
+        "对于群聊中的多人讨论，可以自然地引用或回应特定用户。",
+        "对于相关工具定义不存在的功能请求，请告知用户无法做到，而不是使用虚拟的回应。",
+        "保持对话连贯，避免机械化地重复格式信息。"
+      ],
+      "max_user_messages_per_chat": 100, # 单个会话记录的上下文数量（仅保存多少轮用户发言）
+      "cache_inactive_unload_seconds": 1800 # 单个会话长时间不活跃自动卸载缓存时间配置
     },
     "rules_manager": {
-      "mode": "wait"
+      "mode": "wait" # wait：同一会话的请求串行，不同会话的请求并行，all：所有请求并行。注意：需要后端LLM框架（VLLM等）支持并行策略
+    },
+    "port_manager": {
+      "reconnect_interval": 10, # 对接客户端/服务端，断线自动重连间隔（s）
+      "max_reconnect_attempts": 3 # 最大尝试重连次数
+    },
+    "essentials_manager": {
+      "enable_model_management": true, # 是否允许通过会话基础指令更换指定会话模型
+      "enable_prompt_management": true, # 是否允许通过会话基础指令更换指定会话提示词
+      "enable_tool_management": true, # 是否允许通过会话基础指令重载工具注册信息（用于热加载工具）
+      "admin_chats": [
+        "qq_private_1308213863" # 基础指令重载工具权限的指定会话id（只有此会话id才能使用工具重载指令）
+      ]
+    },
+    "session_manager": {
+      "session_timeout_minutes": 5,
+      "max_sessions": 100
     }
   }
 }
@@ -317,13 +363,17 @@ async-ai-agent/
 ```json
 {
   "cache": {
-    "default_ttl_seconds": 60,
-    "privilege_ttl_seconds": 1800
+    "default_ttl_seconds": 60, # 默认对话缓存图片信息时间（s）
+    "privilege_ttl_seconds": 1800, # 指定对话缓存图片信息时间（s）
+    "default_max_per_chat": 10, # 默认对话缓存图片数量
+    "privilege_max_per_chat": 20 # 指定对话缓存图片数量
   },
   "concurrency": {
-    "max_concurrent_downloads": 8,
-    "max_encoding_threads": 4
-  }
+    "max_concurrent_downloads": 8, # 最大图片并发下载数量（需要根据）
+    "max_encoding_threads": 4, # 最大图片转码线程数量
+    "download_timeout": 30 # 图片下载超时设定
+  },
+  "privilege": [] # 指定会话id
 }
 ```
 
@@ -342,81 +392,23 @@ async-ai-agent/
 系统自带工具函数：
 - `#提示词` - 查看/设定/删除专属提示词
 
-### 自定义工具
-在`tools_service/`目录中添加Python文件：
-```python
-# tools_service/my_tool.py
-async def get_weather(city: str) -> dict:
-    """
-    获取城市天气信息
-    
-    Args:
-        city: 城市名称
-        
-    Returns:
-        天气信息字典
-    """
-    # 实现天气查询逻辑
-    return {
-        "success": True,
-        "city": city,
-        "weather": "晴朗",
-        "temperature": 25
-    }
-```
-
-工具调用协议
-1. 工具定义格式
-工具定义遵循OpenAI工具调用规范：
-
+### 自定义工具开发
+暂时没想好怎么写啊...
+总而言之，言而总之，工具业务可以通过向系统申请chat_id（会话id）请求，来做到指定会话下，独立配置工具业务权限的设置。
+工具业务返回的信息对系统而言是完善的一个content数据：
 ```json
 {
-  "type": "function",
-  "function": {
-    "name": "tool_module_function",
-    "description": "工具描述",
-    "parameters": {
-      "type": "object",
-      "properties": {
-        "param1": {"type": "string", "description": "参数描述"}
-      },
-      "required": ["param1"]
-    }
-  }
+  "role": "tool",
+  "tool_call_id": "系统内处理匹配",
+  "name": "系统内处理",
+  "content": "这是你开发的第三方业务的实际数据",
 }
 ```
 
-2. 工具函数要求
-工具函数需要：
-
-放置在 tools_service/ 目录下
-
-使用async/await异步函数
-
-有清晰的文档字符串（docstring）
-
-返回字典格式的结果
-
-示例工具函数：
-
-```python
-async def example_tool(param1: str, chat_id: str = None) -> dict:
-    """
-    示例工具函数
-    
-    Args:
-        param1: 示例参数
-        chat_id: 对话ID
-        
-    Returns:
-        执行结果
-    """
-    return {
-        "success": True,
-        "result": f"处理结果: {param1}",
-        "chat_id": chat_id
-    }
-```
+### 扩展工具函数
+1. 在`tools_service/`目录添加`.py`文件（我提交了一个百度AI搜索的业务，可以参考一下，当然，没有提供对应的密钥，如果你问，安装后为什么不能联网，那我只能说，你给钱吗？不给钱你说尼玛呢。）
+2. 实现异步函数，包含完整文档字符串
+3. 系统会自动注册并生成OpenAI格式定义
 
 ## 🎯 性能特点
 
@@ -529,7 +521,7 @@ class Client:
 3. 服务端协议
 模型服务端需要实现以下接口：
 
-3-1. 请求数据格式
+3-1. 请求数据格式（理论上你也可以不改，完全仅作为中转服务，系统层面已经完成了对应的协议格式）
 系统发送给模型服务的请求格式：
 
 ```json
@@ -596,11 +588,6 @@ class Model:
         """停止模型服务"""
 ```
 
-### 扩展工具函数
-1. 在`tools_service/`目录添加`.py`文件
-2. 实现异步函数，包含完整文档字符串
-3. 系统会自动注册并生成OpenAI格式定义
-
 ## 📊 监控和日志
 
 ### 系统状态
@@ -618,6 +605,7 @@ class Model:
 
 欢迎贡献！请遵循以下步骤：
 
+以下是deepseek老师的建议，我反正看不懂，我也用的少，但是就很震撼。
 1. **Fork 仓库**
 2. **创建功能分支** (`git checkout -b feature/AmazingFeature`)
 3. **提交更改** (`git commit -m 'Add some AmazingFeature'`)
@@ -625,10 +613,7 @@ class Model:
 5. **开启 Pull Request**
 
 ### 开发规范
-- 代码风格：遵循PEP 8
-- 类型提示：所有函数必须包含类型提示
-- 文档字符串：所有公共函数必须有完整的文档字符串
-- 异步优先：新功能必须使用异步实现
+- 异步优先：建议使用异步实现
 
 ## 📄 许可证
 
@@ -638,7 +623,7 @@ class Model:
 
 - **问题报告**: [GitHub Issues]
 - **功能请求**: 通过Issues提交
-- **讨论区**: GitHub Discussions
+- **讨论区**: 没有啊，我不知道怎么写readme啊，那你能帮帮我吗？
 
 ## 🙏 致谢
 
@@ -649,6 +634,7 @@ class Model:
 **提示**: 首次运行时会自动创建必要的目录和配置文件。请确保有足够的磁盘空间和网络连接（用于图片下载）。
 
 **注意**: 生产环境部署前请仔细审查安全配置，特别是权限和网络设置。
+
 
 
 
