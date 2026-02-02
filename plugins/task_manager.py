@@ -1,6 +1,3 @@
-# task_manager.py
-#!/usr/bin/env python3
-
 import asyncio
 import logging
 import time
@@ -38,6 +35,16 @@ class TaskManager:
         for key, value in kwargs.items():
             if hasattr(self, key):
                 setattr(self, key, value)
+                
+        if self.session_manager:
+            await self.session_manager.register_cleanup_callback(self._on_session_cleanup)
+        
+    async def _on_session_cleanup(self, session_id):
+        await self.cleanup_session_tools(session_id)
+        if session_id in self.session_semaphores:
+            del self.session_semaphores[session_id]
+        if session_id in self.tool_tracker:
+            del self.tool_tracker[session_id]
                 
     def set_message_callback(self, callback):
         self.message_callback = callback
