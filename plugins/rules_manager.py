@@ -1,6 +1,3 @@
-# rules_manager.py
-#!/usr/bin/env python3
-
 import asyncio
 import logging
 
@@ -12,6 +9,7 @@ class RulesManager:
         self.config = None
         self.parallel_mode = "wait"
         self.is_running = False
+        self.active_tasks = set()
         
     async def initialize(self, config, **kwargs):
         self.config = config
@@ -37,26 +35,34 @@ class RulesManager:
             return
             
         if self.parallel_mode == "all":
-            await self._handle_all_mode(workflow_result)
+            await self._handle_all_mode(workflow_result, chat_id, session_id)
         elif self.parallel_mode == "wait":
-            await self._handle_wait_mode(workflow_result)
+            await self._handle_wait_mode(workflow_result, chat_id, session_id)
             
-    async def _handle_all_mode(self, workflow_result):
+    async def _handle_all_mode(self, workflow_result, chat_id, session_id):
         try:
-            task = asyncio.create_task(self._execute_workflow_c(workflow_result))
-            task.add_done_callback(
-                lambda t: asyncio.create_task(self._handle_workflow_c_result(t.result()))
-            )
-        except Exception as e:
-            self.logger.error(f"完全并行模式处理失败: {e}")
-            
-    async def _handle_wait_mode(self, workflow_result):
-        try:
-            chat_id = workflow_result.get("chat_id")
-            
             task_data = {
                 "chat_id": chat_id,
-                "session_id": workflow_result.get("session_id"),
+                "session_id": session_id,
+                "context_data": workflow_result.get("context_data"),
+                "source": "rules_manager",
+                "workflow_type": "C"
+            }
+            
+            task = asyncio.create_task(self._execute_workflow_c_direct(task_data))
+            self.active_tasks.add(task)
+            task.add_done_callback(
+                lambda t: self.active_tasks.discard(t) if t in self.active_tasks else None
+            )
+            
+        except Exception as e:
+            self.logger.error(f"all模式处理失败: {e}")
+            
+    async def _handle_wait_mode(self, workflow_result, chat_id, session_id):
+        try:
+            task_data = {
+                "chat_id": chat_id,
+                "session_id": session_id,
                 "context_data": workflow_result.get("context_data"),
                 "source": "rules_manager",
                 "workflow_type": "C"
@@ -65,38 +71,33 @@ class RulesManager:
             task_id = await self.queue_manager.enqueue_llm(chat_id, task_data)
             
             if task_id:
-                self.logger.debug(f"工作流C已加入异步LLM队列: task_id={task_id}, chat_id={chat_id}")
+                self.logger.debug(f"工作流C已加入LLM队列: task_id={task_id}, chat_id={chat_id}")
                 
         except Exception as e:
-            self.logger.error(f"局部并行模式处理失败: {e}")
+            self.logger.error(f"wait模式处理失败: {e}")
             
-    async def _execute_workflow_c(self, workflow_result):
+    async def _execute_workflow_c_direct(self, task_data):
         if not self.task_manager:
-            return {"success": False, "error": "task_manager未初始化"}
+            self.logger.error("task_manager未初始化")
+            return
             
         try:
             task_info = {
-                "task_id": f"rules_c_{workflow_result.get('chat_id')}_{workflow_result.get('session_id')}",
+                "task_id": f"direct_{task_data.get('chat_id')}_{task_data.get('session_id')}_{int(asyncio.get_event_loop().time())}",
                 "workflow_type": "C",
-                "task_data": {
-                    "chat_id": workflow_result.get("chat_id"),
-                    "session_id": workflow_result.get("session_id"),
-                    "context_data": workflow_result.get("context_data")
-                }
+                "task_data": task_data
             }
             
-            return await self.task_manager.execute_task(task_info)
+            result = await self.task_manager.execute_task(task_info)
             
+            if result.get("success") and "response" in result:
+                if self.result_callback:
+                    await self.result_callback(result)
+            else:
+                self.logger.error(f"直接执行工作流C失败: {result.get('error')}")
+                
         except Exception as e:
-            self.logger.error(f"异步执行工作流C失败: {e}")
-            return {"success": False, "error": str(e)}
-            
-    async def _handle_workflow_c_result(self, result):
-        if result.get("success"):
-            if hasattr(self, "result_callback") and self.result_callback:
-                await self.result_callback(result)
-        else:
-            self.logger.error(f"工作流C执行失败: {result.get('error')}")
+            self.logger.error(f"直接执行工作流C异常: {e}")
             
     def set_result_callback(self, callback):
         self.result_callback = callback
@@ -108,17 +109,20 @@ class RulesManager:
         if mode not in ["all", "wait"]:
             return
             
-        if mode == "all":
-            self.logger.warning("在异步架构中使用all模式可能导致顺序问题")
-            
         self.parallel_mode = mode
         
     async def get_status(self):
         return {
             "parallel_mode": self.parallel_mode,
             "is_running": self.is_running,
-            "note": "异步架构建议使用wait模式以确保顺序"
+            "active_tasks": len(self.active_tasks)
         }
         
     async def shutdown(self):
         self.is_running = False
+        
+        for task in self.active_tasks:
+            task.cancel()
+            
+        if self.active_tasks:
+            await asyncio.gather(*self.active_tasks, return_exceptions=True)

@@ -1,10 +1,6 @@
-# queue_manager.py
-#!/usr/bin/env python3
-
 import asyncio
 import logging
 import time
-from collections import defaultdict
 
 class QueueTask:
     def __init__(self, task_id, chat_id, task_data, workflow_type, priority=0):
@@ -25,6 +21,7 @@ class QueueManager:
         self.queue_status = {}
         self.task_callback = None
         self.message_callback = None
+        self.session_manager_ref = None
         self.is_running = False
         self.lock = asyncio.Lock()
         self.task_counter = 0
@@ -39,9 +36,8 @@ class QueueManager:
         self.message_callback = callback
         
     async def _get_next_task_id(self):
-        async with self.lock:
-            self.task_counter += 1
-            return f"task_{self.task_counter}_{int(time.time())}"
+        self.task_counter += 1
+        return f"task_{self.task_counter}_{int(time.time())}"
         
     async def enqueue_message(self, chat_id, task_data):
         if not self.is_running:
@@ -170,6 +166,11 @@ class QueueManager:
                 if not task:
                     continue
                     
+                if await self._is_session_stale(task.task_data.get("session_id")):
+                    self.logger.warning(f"任务 {task.task_id} 对应的会话已超时，跳过处理")
+                    queue.task_done()
+                    continue
+                    
                 await self._process_llm_task(task)
                 queue.task_done()
                 
@@ -212,6 +213,16 @@ class QueueManager:
                 
         except Exception as e:
             self.logger.error(f"LLM任务处理失败: {task.task_id}, 错误: {e}")
+    
+    async def _is_session_stale(self, session_id):
+        if not session_id or not self.session_manager_ref:
+            return False
+            
+        try:
+            session_info = await self.session_manager_ref.get_session_info(session_id)
+            return session_info is None
+        except:
+            return False
             
     async def get_queue_status(self, queue_type=None, chat_id=None):
         status = {}

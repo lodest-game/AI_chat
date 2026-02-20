@@ -1,17 +1,9 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-Agent_core.py - 异步系统核心调度器
-集成重构后的工具调用系统
-"""
-
 import asyncio
 import signal
 import sys
 import logging
 import time
 from pathlib import Path
-from typing import Dict, Any
 
 from plugins.config_manager import ConfigManager
 from plugins.context_manager import ContextManager
@@ -23,7 +15,6 @@ from plugins.tool_manager import ToolManager
 from plugins.essentials_manager import EssentialsManager
 from plugins.port_manager import PortManager
 from plugins.image_manager import ImageManager
-
 
 class AgentCore:
     def __init__(self):
@@ -97,17 +88,15 @@ class AgentCore:
             
             self.logger.info("初始化工具管理器...")
             self.tool_manager = ToolManager(self.tools_service_dir)
-            
-            # 先设置上下文管理器引用
             self.tool_manager.set_context_manager(self.context_manager)
-            
-            # 然后初始化工具管理器
             await self.tool_manager.initialize(config)
-            
-            # 注入上下文管理器到已加载的模块
             await self.tool_manager.inject_context_to_modules()
-            
             self.context_manager.set_tool_manager(self.tool_manager)
+            
+            self.logger.info("初始化异步会话管理器...")
+            self.session_manager = SessionManager()
+            await self.session_manager.initialize(config)
+            self.session_manager.set_image_manager(self.image_manager)
             
             self.logger.info("初始化异步队列管理器...")
             self.queue_manager = QueueManager()
@@ -118,17 +107,12 @@ class AgentCore:
             await self.task_manager.initialize(
                 config=config,
                 context_manager=self.context_manager,
-                session_manager=None,
+                session_manager=self.session_manager,
                 essentials_manager=None,
                 tool_manager=self.tool_manager,
                 port_manager=None,
                 message_callback=self._handle_message_result
             )
-            
-            self.logger.info("初始化异步会话管理器...")
-            self.session_manager = SessionManager()
-            await self.session_manager.initialize(config)
-            self.session_manager.set_image_manager(self.image_manager)
             
             self.logger.info("初始化基础指令处理器...")
             self.essentials_manager = EssentialsManager()
@@ -146,6 +130,8 @@ class AgentCore:
                 task_manager=self.task_manager
             )
             
+            self.rules_manager.set_result_callback(self._handle_message_result)
+            
             self.logger.info("初始化异步端口管理器...")
             self.port_manager = PortManager(self.clients_dir, self.models_dir)
             await self.port_manager.initialize(
@@ -153,8 +139,7 @@ class AgentCore:
                 message_callback=self._handle_incoming_message
             )
             
-            # 更新任务管理器的引用
-            self.task_manager.session_manager = self.session_manager
+            self.queue_manager.session_manager_ref = self.session_manager
             self.task_manager.essentials_manager = self.essentials_manager
             self.task_manager.port_manager = self.port_manager
             
@@ -164,7 +149,7 @@ class AgentCore:
             self.logger.error(f"异步模块初始化失败: {e}")
             raise
             
-    async def _handle_incoming_message(self, message_data: Dict[str, Any]):
+    async def _handle_incoming_message(self, message_data):
         if not self.is_running:
             return
             
@@ -194,7 +179,7 @@ class AgentCore:
         if task_id:
             self.logger.debug(f"消息已加入异步队列: {chat_id}, task_id={task_id}")
             
-    async def _handle_message_result(self, result: Dict[str, Any]):
+    async def _handle_message_result(self, result):
         if not self.is_running:
             return
             
@@ -230,11 +215,11 @@ class AgentCore:
                 }
                 await self._send_response(error_response)
                 
-    async def _send_response(self, response_data: Dict[str, Any]):
+    async def _send_response(self, response_data):
         if self.port_manager and response_data and "chat_id" in response_data:
             await self.port_manager.send_response_async(response_data)
             
-    async def _add_ai_reply_to_context(self, chat_id: str, response: Dict[str, Any]):
+    async def _add_ai_reply_to_context(self, chat_id, response):
         if not chat_id or not response:
             return
             
@@ -263,7 +248,7 @@ class AgentCore:
         self.queue_manager.set_message_callback(self._handle_message_result)
         await self.queue_manager.start()
         
-    async def _handle_queue_task(self, task_info: Dict[str, Any]) -> Dict[str, Any]:
+    async def _handle_queue_task(self, task_info):
         if self.task_manager:
             return await self.task_manager.execute_task(task_info)
         return {"success": False, "error": "task_manager未初始化"}
@@ -313,8 +298,10 @@ class AgentCore:
         if self.session_manager:
             await self.session_manager.shutdown()
             
+        if self.rules_manager:
+            await self.rules_manager.shutdown()
+            
         if self.task_manager:
-            # 清理任务管理器的工具跟踪状态
             await self.task_manager.cleanup_session_tools("*")
             
     def _setup_signal_handlers(self):
@@ -324,7 +311,6 @@ class AgentCore:
             
     def _signal_handler(self, signum, frame):
         asyncio.create_task(self.stop())
-
 
 async def main():
     agent = AgentCore()
@@ -336,7 +322,6 @@ async def main():
         print(f"系统异常: {e}")
     finally:
         await agent.stop()
-
 
 if __name__ == "__main__":
     try:

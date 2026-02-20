@@ -45,7 +45,7 @@ class TaskManager:
             del self.session_semaphores[session_id]
         if session_id in self.tool_tracker:
             del self.tool_tracker[session_id]
-                
+    
     def set_message_callback(self, callback):
         self.message_callback = callback
         
@@ -288,7 +288,7 @@ class TaskManager:
                 arguments=arguments
             )
             
-            await self._track_tool_call(task)
+            self._track_tool_call(task)
             
             try:
                 result = await self.tool_manager.execute_tool_with_timeout(
@@ -313,7 +313,7 @@ class TaskManager:
                 task.result = content
                 
             finally:
-                await self._update_tool_call(task)
+                self._update_tool_call(task)
                 
             return {
                 "tool_call_id": tool_call_id,
@@ -326,13 +326,13 @@ class TaskManager:
             self.logger.error(f"执行工具调用失败: {e}")
             return None
             
-    async def _track_tool_call(self, task):
+    def _track_tool_call(self, task):
         if task.session_id not in self.tool_tracker:
             self.tool_tracker[task.session_id] = {}
             
         self.tool_tracker[task.session_id][task.tool_call_id] = task
         
-    async def _update_tool_call(self, task):
+    def _update_tool_call(self, task):
         if (task.session_id in self.tool_tracker and 
             task.tool_call_id in self.tool_tracker[task.session_id]):
             self.tool_tracker[task.session_id][task.tool_call_id] = task
@@ -381,7 +381,7 @@ class TaskManager:
             return await self.port_manager.send_to_model_async(request_data)
             
         except Exception as e:
-            self.logger.error(f"异步调用模型服务失败: {e}")
+            self.logger.error(f"调用模型服务失败: {e}")
             return None
             
     async def _extract_response_content(self, model_response):
