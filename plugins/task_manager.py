@@ -2,6 +2,7 @@ import asyncio
 import logging
 import time
 import json
+import re
 
 class ToolCallTask:
     def __init__(self, tool_call_id, session_id, chat_id, tool_name, arguments):
@@ -28,6 +29,15 @@ class TaskManager:
         self.tool_tracker = {}
         self.session_semaphores = {}
         self.max_tool_calls = 10
+        
+        self.think_filters = [
+            (r'<think>.*?</think>', 'remove'),
+            (r'<\|thinking\|>.*?</\|thinking\|>', 'remove'),
+            (r'\[思考\].*?\[/思考\]', 'remove'),
+            (r'</think>', 'after'),
+            (r'</\|thinking\|>', 'after'),
+            (r'\[/思考\]', 'after'),
+        ]
         
     async def initialize(self, config, **kwargs):
         self.config = config
@@ -383,26 +393,52 @@ class TaskManager:
         except Exception as e:
             self.logger.error(f"调用模型服务失败: {e}")
             return None
+    
+    def _filter_thinking(self, text):
+        if not isinstance(text, str):
+            return text
+    
+        # 1. 尝试删除完整的思考块（remove模式）
+        for pattern, mode in self.think_filters:
+            if mode == 'remove':
+                cleaned = re.sub(pattern, '', text, flags=re.DOTALL)
+                if len(cleaned) < len(text):
+                    return cleaned.strip()
+    
+        # 2. 尝试查找结束标记，取之后的内容（after模式）
+        for pattern, mode in self.think_filters:
+            if mode == 'after':
+                match = re.search(pattern, text, flags=re.DOTALL)
+                if match:
+                    after = text[match.end():]
+                    if after.strip():
+                        return after.strip()
+    
+        # 3. 没有匹配任何思考规则，返回原文本（不做任何截断）
+        return text.strip()
             
     async def _extract_response_content(self, model_response):
         if not model_response:
             return "模型服务返回空响应"
-            
         try:
             if "choices" in model_response and model_response["choices"]:
                 choice = model_response["choices"][0]
                 if "message" in choice:
                     message = choice["message"]
                     if "content" in message and message["content"]:
-                        return message["content"]
+                        raw_content = message["content"]
+                        if isinstance(raw_content, list):
+                            return raw_content
+                        filtered = self._filter_thinking(raw_content)
+                        return filtered
                     elif "tool_calls" in message:
                         return "[抱歉，群聊太过抽象，响应失败啦]"
-                        
             if "content" in model_response:
-                return model_response["content"]
-                
+                raw_content = model_response["content"]
+                if isinstance(raw_content, list):
+                    return raw_content
+                return self._filter_thinking(raw_content)
             return str(model_response)
-            
         except Exception as e:
             self.logger.error(f"提取响应内容失败: {e}")
             return "无法解析模型响应"
